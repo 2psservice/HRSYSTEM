@@ -1,0 +1,2975 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2PS Attendance | ระบบบริหารงานบุคคลและบันทึกเวลา</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Sarabun -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS for Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; }
+        .tab-active { border-bottom: 3px solid #2563eb; color: #1e40af; font-weight: 700; background-color: white; }
+        .tab-inactive { color: #64748b; background-color: #f1f5f9; }
+        .tab-inactive:hover { background-color: #e2e8f0; }
+        .admin-subtab-active { background-color: #2563eb; color: white; }
+        .admin-subtab-inactive { background-color: white; color: #64748b; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        /* Login Screen Animation */
+        .login-fade-out { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col">
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center transition-opacity duration-500">
+        <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h2 class="text-lg font-bold text-slate-700">กำลังเตรียมข้อมูลระบบ...</h2>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="fixed inset-0 bg-slate-100 z-[90] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md animate-slide-in">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg mx-auto mb-4 text-2xl">
+                    <i class="fas fa-fingerprint"></i>
+                </div>
+                <h1 class="text-2xl font-black text-slate-800">เข้าสู่ระบบ</h1>
+                <p class="text-slate-500 text-sm">2PS Attendance System</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อผู้ใช้งาน</label>
+                    <input type="text" id="loginUsername" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Username" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">รหัสผ่าน</label>
+                    <input type="password" id="loginPassword" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Password" required>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="rememberMe" class="rounded text-blue-600 focus:ring-blue-500">
+                    <label for="rememberMe" class="text-sm font-bold text-slate-500">จำฉันไว้ในระบบ</label>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-black py-4 rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition transform active:scale-95">
+                    เข้าสู่ระบบ
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content (Hidden by default) -->
+    <div id="mainApp" class="hidden flex-col h-full overflow-auto">
+        <!-- Top Navigation -->
+        <nav class="bg-white border-b border-slate-200 sticky top-0 z-50 shrink-0">
+            <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-blue-200 shadow-lg">
+                        <i class="fas fa-users-cog text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-black text-xl tracking-tight text-slate-900">2PS <span class="text-blue-600">Attendance</span></h1>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest" id="currentDateDisplay">Loading...</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <!-- User Switcher (Only visible to Admin) -->
+                    <div id="adminUserSwitcher" class="hidden md:flex items-center bg-slate-100 rounded-full px-4 py-1.5 border border-slate-200">
+                        <i class="fas fa-user-circle text-slate-400 mr-2"></i>
+                        <select id="userSwitcher" onchange="switchCurrentUser(this.value)" class="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 cursor-pointer outline-none">
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <span id="loggedInUserDisplay" class="text-xs font-bold text-slate-500 hidden md:block"></span>
+                        <button onclick="handleLogout()" class="text-red-400 hover:text-red-600 transition-colors bg-red-50 p-2 rounded-lg" title="ออกจากระบบ">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main class="max-w-7xl mx-auto px-4 py-6 w-full flex-1">
+            
+            <!-- Role Switching Tabs (Restricted visibility) -->
+            <div id="roleTabs" class="flex p-1 bg-slate-200 rounded-2xl mb-8 w-full max-w-2xl mx-auto shadow-inner">
+                <button onclick="switchRole('employee')" id="btn-role-employee" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 tab-active">
+                    <i class="fas fa-user"></i> พนักงาน
+                </button>
+                <button onclick="switchRole('admin')" id="btn-role-admin" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 tab-inactive">
+                    <i class="fas fa-shield-alt"></i> Admin Yard
+                </button>
+                <button onclick="switchRole('manager')" id="btn-role-manager" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 tab-inactive relative">
+                    <i class="fas fa-chart-line"></i> Manager
+                    <span id="manager-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce">0</span>
+                </button>
+            </div>
+
+            <!-- ================= EMPLOYEE VIEW ================= -->
+            <section id="view-employee" class="space-y-6 animate-slide-in">
+                <!-- Top Profile & Clock Card -->
+                <div class="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full mix-blend-multiply filter blur-3xl opacity-50 -translate-y-1/2 translate-x-1/2"></div>
+                    <div class="flex flex-col md:flex-row items-center md:items-start justify-between gap-6 relative z-10">
+                        <div class="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
+                            <div class="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-4xl shadow-lg border-4 border-white shrink-0">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="text-center md:text-left space-y-2">
+                                <h2 id="emp-name-display" class="text-3xl font-black text-slate-800 leading-tight">...</h2>
+                                <div class="flex flex-wrap gap-2 justify-center md:justify-start">
+                                    <span id="emp-pos-display" class="bg-blue-100 text-blue-700 text-sm font-bold px-4 py-1 rounded-full uppercase tracking-wide border border-blue-200 shadow-sm">...</span>
+                                    <span id="emp-code-display" class="bg-slate-100 text-slate-600 text-sm font-bold px-4 py-1 rounded-full border border-slate-200">...</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center md:items-end justify-center bg-slate-50 p-4 rounded-2xl border border-slate-100 min-w-[200px] w-full md:w-auto">
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1"><i class="far fa-clock mr-1"></i> เวลาปัจจุบัน</p>
+                            <h3 class="text-5xl font-black text-slate-800 font-mono tracking-tighter" id="emp-current-time">00:00:00</h3>
+                            <div class="flex items-center gap-2 mt-2">
+                                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                <p id="emp-work-start-time" class="text-xs text-slate-500 font-bold">เข้างานปกติ 08:30 น.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    <!-- HTML UPDATED: Employee Score Card -->
+                    <div id="emp-score-card" class="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group transition-all duration-700">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <h3 class="text-white/80 font-bold text-sm uppercase tracking-wider mb-1">คะแนนความประพฤติ (ปีนี้)</h3>
+                                <div class="flex items-baseline gap-2">
+                                    <span id="emp-score" class="text-5xl font-black tracking-tighter">0</span>
+                                    <span id="emp-base-display" class="text-lg text-white/60">/ 30</span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] font-bold text-white/90 bg-white/20 inline-block px-2 py-1 rounded" id="emp-status-text">ปกติ</p>
+                        </div>
+                        <div class="mt-2 bg-black/20 h-2 rounded-full overflow-hidden backdrop-blur-sm mb-4">
+                            <div id="emp-score-bar" class="bg-white h-full rounded-full transition-all duration-1000" style="width: 100%"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 border-t border-white/20 pt-4 mt-2">
+                            <div class="text-center group-hover:bg-white/5 rounded-xl transition p-2">
+                                <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-file-alt mr-1"></i>ลางาน (ครั้ง)</p>
+                                <p id="stat-leave-count-card" class="text-3xl font-black text-white drop-shadow-md">0</p>
+                            </div>
+                            <div class="text-center border-l border-white/20 group-hover:bg-white/5 rounded-xl transition p-2">
+                                <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-exclamation-triangle mr-1"></i>สาย/ขาด/โทษ</p>
+                                <p id="stat-penalty-count-card" class="text-3xl font-black text-red-300 drop-shadow-md">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group transition-all duration-700">
+                        <div class="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4">
+                            <i class="fas fa-clock text-9xl rotate-12"></i>
+                        </div>
+                        <h3 class="text-white/80 font-bold text-sm uppercase tracking-wider mb-4">OT สะสมเดือนนี้</h3>
+                        <div class="flex items-baseline gap-2 mb-4">
+                            <span id="emp-ot-sum" class="text-5xl font-black tracking-tighter">0</span>
+                            <span class="text-lg text-white/60">ชม.</span>
+                        </div>
+                        <p class="text-[10px] font-bold text-white/90 bg-white/20 inline-block px-2 py-1 rounded">ขยันขันแข็ง!</p>
+                    </div>
+                    <div onclick="openCalendarModal()" class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex flex-col justify-center items-center cursor-pointer hover:shadow-lg hover:border-purple-200 transition group hover:-translate-y-1">
+                        <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <h3 class="font-bold text-slate-700">ปฏิทินการทำงาน</h3>
+                        <p class="text-xs text-slate-400 mt-1">ดูวันมาทำงาน / OT / ลา</p>
+                    </div>
+                    <div onclick="openModal('leaveModal')" class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex flex-col justify-center items-center cursor-pointer hover:shadow-lg hover:border-blue-200 transition group hover:-translate-y-1">
+                        <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-paper-plane"></i>
+                        </div>
+                        <h3 class="font-bold text-slate-700">ส่งใบลา</h3>
+                        <p class="text-xs text-slate-400 mt-1">ลากิจ / ลาป่วย / อื่นๆ</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mt-6">
+                    <div class="px-6 py-4 bg-slate-50/50 border-b border-slate-100 font-black text-slate-800">ประวัติการทำงานและ OT</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
+                                <tr>
+                                    <th class="px-6 py-3">วันที่</th>
+                                    <th class="px-6 py-3">เวลา</th>
+                                    <th class="px-6 py-3">รายการ</th>
+                                    <th class="px-6 py-3">เหตุผล</th>
+                                    <th class="px-6 py-3 text-center">OT (ชม.)</th>
+                                    <th class="px-6 py-3 text-center">หักคะแนน</th>
+                                    <th class="px-6 py-3 text-center">สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emp-history-list" class="divide-y divide-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="attendance-actions" class="hidden"></div>
+            </section>
+
+            <!-- ================= SITE ADMIN VIEW ================= -->
+            <section id="view-admin" class="hidden space-y-6 animate-slide-in">
+                <div class="flex space-x-2 mb-4 bg-slate-100 p-1 rounded-xl w-fit">
+                    <button onclick="switchAdminSubTab('yard')" id="btn-adm-tab-yard" class="px-6 py-2 rounded-lg text-sm font-bold admin-subtab-active shadow-sm transition">จัดการราย Yard</button>
+                    <button onclick="switchAdminSubTab('all')" id="btn-adm-tab-all" class="px-6 py-2 rounded-lg text-sm font-bold admin-subtab-inactive hover:bg-white/50 transition">พนักงานทั้งหมด</button>
+                </div>
+
+                <!-- View 1: Yard Management -->
+                <div id="adm-view-yard-container">
+                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                        <div class="flex flex-col md:flex-row gap-6 justify-between items-end">
+                            <div class="flex flex-wrap gap-4 items-center">
+                                <div class="space-y-1">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase">เลือกไซต์งาน (Yard)</label>
+                                    <div class="flex gap-2 items-center">
+                                        <select id="adminSiteSelector" onchange="renderAdminView()" class="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-800"></select>
+                                        <button onclick="openManageYardsModal()" class="bg-slate-100 text-slate-600 w-10 h-10 rounded-xl hover:bg-slate-200 transition" title="จัดการสถานที่ทำงาน"><i class="fas fa-cog"></i></button>
+                                    </div>
+                                    <p id="admin-yard-time-display" class="text-[10px] text-blue-600 font-bold ml-1"></p>
+                                </div>
+                                <div class="space-y-1">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase">เลือกวันที่ (ตรวจสอบย้อนหลัง)</label>
+                                    <input type="date" id="admDateSelector" onchange="renderAdminView()" class="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-800">
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="openModal('addEmpModal')" class="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition">เพิ่มพนักงาน</button>
+                                <button onclick="openModal('importExcelModal')" class="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Excel</button>
+                                <button onclick="exportYardReport()" class="bg-green-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-600 transition flex items-center gap-1 shadow-lg shadow-green-200">
+                                    <i class="fas fa-file-export"></i> Export รายงาน
+                                </button>
+                                <button onclick="openManageHolidaysModal()" class="bg-purple-100 text-purple-600 px-4 py-2.5 rounded-xl hover:bg-purple-200 transition shadow-sm font-bold text-sm flex items-center gap-1"><i class="fas fa-calendar-check"></i> วันหยุด</button>
+                                <button onclick="openModal('manageRulesModal'); renderRuleSettings(); renderGradeSettings();" class="bg-slate-200 ...">
+    <i class="fas fa-sliders-h"></i>
+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
+                        <div class="lg:col-span-3 space-y-6">
+                            <div class="grid grid-cols-3 gap-4">
+                                <div onclick="openAdminYardDetail('all')" class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition group">
+                                    <span class="text-[10px] font-black text-slate-400 uppercase mb-1 group-hover:text-blue-500">พนักงานทั้งหมด</span>
+                                    <span id="adm-stats-total" class="text-3xl font-black text-slate-800 group-hover:text-blue-600">0</span>
+                                </div>
+                                <div onclick="openAdminYardDetail('absent')" class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition group">
+                                    <span class="text-[10px] font-black text-slate-400 uppercase mb-1 group-hover:text-red-500">ลา/ขาด</span>
+                                    <span id="adm-stats-absent" class="text-3xl font-black text-red-500 group-hover:scale-110 transition-transform">0</span>
+                                </div>
+                                <div onclick="openAdminYardDetail('present')" class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition group">
+                                    <span class="text-[10px] font-black text-slate-400 uppercase mb-1 group-hover:text-green-500">มาทำงาน</span>
+                                    <span id="adm-stats-present" class="text-3xl font-black text-green-500 group-hover:scale-110 transition-transform">0</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                                <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                                    <span id="adm-list-title" class="font-black text-slate-700 text-lg">รายชื่อพนักงาน</span>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button onclick="handleBulkAttendance(11)" class="bg-green-100 text-green-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-green-200 shadow-sm"><i class="fas fa-check-double mr-1"></i> เหมา มา</button>
+                                        <button onclick="handleBulkAttendance(6)" class="bg-yellow-100 text-yellow-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-yellow-200 shadow-sm"><i class="fas fa-clock mr-1"></i> เหมา สาย</button>
+                                        <button onclick="handleBulkAttendance(8)" class="bg-red-100 text-red-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-red-200 shadow-sm"><i class="fas fa-times-circle mr-1"></i> เหมา ขาด</button>
+                                        <button onclick="openBulkTransferModal('yardSelect')" class="bg-orange-100 text-orange-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-orange-200 shadow-sm"><i class="fas fa-exchange-alt mr-1"></i> ย้ายกลุ่ม</button>
+                                    </div>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-sm">
+                                        <thead class="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
+                                            <tr>
+                                                <th class="p-4 w-10"><input type="checkbox" id="selectAllYardCheck" onchange="toggleSelectAllYard(this)"></th>
+                                                <th class="p-4">พนักงาน / เช็คชื่อ</th>
+                                                <th class="p-4 text-center">สถานะ</th>
+                                                <th class="p-4 text-center">เวลาเช็ค</th> 
+                                                <th class="p-4 text-center w-24 bg-blue-50 text-blue-600">OT วันนี้ (ชม.)</th>
+                                                <th class="p-4 text-center">รวม OT เดือนนี้</th>
+                                                <th class="p-4 text-center">ปฏิทิน</th>
+                                                <th class="p-4 text-right">การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adm-employee-list" class="divide-y divide-slate-50"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-6">
+                            <div class="bg-red-600 rounded-3xl p-6 text-white shadow-lg shadow-red-200">
+                                <h4 class="text-[10px] font-bold uppercase opacity-80 mb-2">ลงโทษด่วน</h4>
+                                <form onsubmit="handlePenaltySubmit(event)" class="space-y-3">
+                                    <select id="penaltyEmpSelect" class="w-full bg-white border-none rounded-xl text-xs py-2 text-slate-800 font-bold outline-none focus:ring-2 focus:ring-red-300" required></select>
+                                    <select id="penaltyType" class="w-full bg-white border-none rounded-xl text-xs py-2 text-slate-800 font-bold outline-none focus:ring-2 focus:ring-red-300" required></select>
+                                    <button type="submit" class="w-full bg-red-800 text-white font-black py-2 rounded-xl text-xs hover:bg-red-900 transition shadow-md">บันทึกโทษ</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View 2: All Employees (New) with Credentials -->
+                <div id="adm-view-all-container" class="hidden">
+                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-6">
+                        <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
+                            <div class="relative w-full md:w-1/2">
+                                <i class="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
+                                <input type="text" id="allEmpSearch" onkeyup="renderAdminAllEmployees()" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." class="w-full bg-slate-100 border-none rounded-xl pl-10 pr-4 py-3 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="exportAllEmployeesReport()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition flex items-center gap-2">
+                                    <i class="fas fa-file-excel"></i> Export Excel (รายเดือน)
+                                </button>
+                                <button onclick="openBulkTransferModal('allEmpSelect')" class="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-orange-600 transition flex items-center gap-2">
+                                    <i class="fas fa-exchange-alt"></i> ย้ายกลุ่มที่เลือก
+                                </button>
+                                <button onclick="deleteBulkEmployees()" class="bg-red-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-red-200 hover:bg-red-600 transition flex items-center gap-2">
+                                    <i class="fas fa-trash-alt"></i> ลบที่เลือก
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div class="overflow-x-auto max-h-[600px]">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] sticky top-0 z-10">
+                                    <tr>
+                                        <th class="p-4 w-10"><input type="checkbox" onchange="toggleSelectAllAll(this)"></th>
+                                        <th class="p-4">พนักงาน</th>
+                                        <th class="p-4">ตำแหน่ง/สังกัด</th>
+                                        <th class="p-4 text-center">Username</th> <!-- New -->
+                                        <th class="p-4 text-center">Password</th> <!-- New -->
+                                        <th class="p-4 text-center">ปฏิทิน</th>
+                                        <th class="p-4 text-center">คะแนน</th>
+                                        <th class="p-4 text-right">ดูข้อมูล</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adm-all-employee-list" class="divide-y divide-slate-50"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= MANAGER VIEW ================= -->
+            <section id="view-manager" class="hidden space-y-8 animate-slide-in">
+                <!-- Same Manager View Content -->
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-black text-slate-800">Dashboard ผู้จัดการ</h2>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-slate-500">วันที่:</span>
+                            <input type="date" id="mgrDateSelector" onchange="renderManagerView()" class="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="mgr-site-grid"></div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+                            <div class="p-6 bg-slate-900 text-white flex justify-between items-center font-black">
+                                <span><i class="fas fa-hourglass-half text-yellow-400 mr-2"></i>คำขอรออนุมัติ</span>
+                                <span id="mgr-pending-count" class="bg-yellow-400 text-slate-900 text-[10px] px-2 py-0.5 rounded-full ml-2">0</span>
+                            </div>
+                            <div id="mgr-request-list" class="divide-y divide-slate-100 max-h-[300px] overflow-y-auto custom-scrollbar"></div>
+                        </div>
+
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                            <div class="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center font-black text-slate-700">
+                                <span><i class="fas fa-history text-slate-400 mr-2"></i>ประวัติการอนุมัติและรายการย้อนหลัง</span>
+                            </div>
+                            <div id="mgr-history-list" class="divide-y divide-slate-100 max-h-[500px] overflow-y-auto custom-scrollbar"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden h-fit sticky top-24">
+                        <div class="p-6 border-b border-slate-50 flex justify-between items-center font-black">
+                            Ranking พนักงาน
+                            <button onclick="exportEmployeeReport()" class="text-blue-600 text-xs font-bold"><i class="fas fa-file-export"></i></button>
+                        </div>
+                        <div id="mgr-emp-ranking" class="p-4 space-y-3"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals (Same as before + any necessary ones) -->
+    <!-- Calendar Modal -->
+    <div id="calendarModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl animate-slide-in flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-black text-xl text-slate-800 flex items-center gap-2">
+                    <i class="fas fa-calendar-alt text-purple-600"></i> ปฏิทินการทำงาน
+                </h3>
+                <button onclick="closeModal('calendarModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div class="flex justify-between items-center mb-4 bg-slate-50 p-2 rounded-xl">
+                <button onclick="changeCalendarMonth(-1)" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white text-slate-500"><i class="fas fa-chevron-left"></i></button>
+                <span id="calMonthYear" class="font-bold text-slate-700">...</span>
+                <button onclick="changeCalendarMonth(1)" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white text-slate-500"><i class="fas fa-chevron-right"></i></button>
+            </div>
+
+            <div class="grid grid-cols-7 gap-1 mb-2 text-center">
+                <div class="text-red-500 font-bold text-xs">อา</div>
+                <div class="text-slate-500 font-bold text-xs">จ</div>
+                <div class="text-slate-500 font-bold text-xs">อ</div>
+                <div class="text-slate-500 font-bold text-xs">พ</div>
+                <div class="text-slate-500 font-bold text-xs">พฤ</div>
+                <div class="text-slate-500 font-bold text-xs">ศ</div>
+                <div class="text-slate-500 font-bold text-xs">ส</div>
+            </div>
+            
+            <div id="calendarGrid" class="grid grid-cols-7 gap-1 overflow-y-auto custom-scrollbar flex-1">
+                <!-- JS Generated Days -->
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-green-100 border border-green-300"></div> มาทำงาน</div>
+                <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-yellow-100 border border-yellow-300"></div> สาย</div>
+                <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-red-100 border border-red-300"></div> ขาด/ลา/โทษ</div>
+                <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-blue-100 border border-blue-300"></div> ลา/หยุด</div>
+                <div class="flex items-center gap-2"><span class="bg-blue-500 text-white text-[8px] px-1 rounded-full">OT</span> มีโอที</div>
+                <div class="flex items-center gap-2"><span class="bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full">-1</span> หักคะแนน</div>
+                <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-purple-100 border border-purple-300"></div> วันหยุด</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals (Manage Holidays, Bulk Transfer, Add Employee, etc.) included but summarized for brevity -->
+    <!-- [Include other modals here from previous code] -->
+    <!-- Modal: Manage Holidays -->
+    <div id="manageHolidaysModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-slide-in flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-black text-xl text-slate-800 flex items-center gap-2">
+                    <i class="fas fa-umbrella-beach text-purple-500"></i> จัดการวันหยุด
+                </h3>
+                <button onclick="closeModal('manageHolidaysModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="overflow-y-auto flex-1 pr-2 space-y-6">
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <h4 class="font-bold text-sm text-slate-700 mb-3 flex items-center gap-2"><i class="fas fa-redo text-slate-400"></i> วันหยุดประจำสัปดาห์</h4>
+                    <div class="grid grid-cols-4 gap-2">
+                        <!-- Checkboxes 0-6 -->
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="0" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> อาทิตย์</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="1" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> จันทร์</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="2" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> อังคาร</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="3" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> พุธ</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="4" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> พฤหัส</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="5" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> ศุกร์</label>
+                        <label class="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white p-2 rounded-lg border border-slate-200 hover:border-purple-300 has-[:checked]:bg-purple-50 has-[:checked]:border-purple-300 has-[:checked]:text-purple-700 transition"><input type="checkbox" name="weeklyHoliday" value="6" class="rounded text-purple-600 focus:ring-purple-500" onchange="saveHolidays()"> เสาร์</label>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="font-bold text-sm text-slate-700 mb-3 flex items-center gap-2"><i class="fas fa-star text-yellow-400"></i> วันหยุดประจำปี / พิเศษ</h4>
+                    <div class="flex gap-2 mb-4">
+                        <input type="date" id="newHolidayDate" class="flex-1 bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-sm text-slate-800 focus:ring-2 focus:ring-purple-500">
+                        <input type="text" id="newHolidayName" placeholder="ชื่อวันหยุด" class="flex-1 bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-sm text-slate-800 focus:ring-2 focus:ring-purple-500">
+                        <button onclick="addAnnualHoliday()" class="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-purple-700 shadow-md transition">เพิ่ม</button>
+                    </div>
+                    <div class="bg-white border border-slate-100 rounded-2xl overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-500 font-bold text-[10px] uppercase sticky top-0">
+                                <tr>
+                                    <th class="p-3 pl-4">วันที่</th>
+                                    <th class="p-3">ชื่อวันหยุด</th>
+                                    <th class="p-3 text-right pr-4">ลบ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="annualHolidaysList" class="divide-y divide-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Modal: Bulk Transfer -->
+    <div id="bulkTransferModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-slide-in">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xl font-black">ย้ายกลุ่มพนักงาน</h3>
+                <button onclick="closeModal('bulkTransferModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <p class="text-sm text-slate-500 mb-6">คุณเลือกพนักงาน <span id="bulkTransferCount" class="font-black text-blue-600 text-lg">0</span> คน</p>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">ย้ายไปที่ Yard (ปลายทาง)</label>
+            <select id="bulkTargetYard" class="w-full bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-800 mb-6"></select>
+            <div class="flex gap-2">
+                <button onclick="closeModal('bulkTransferModal')" class="flex-1 bg-slate-100 font-bold py-3 rounded-xl text-slate-500">ยกเลิก</button>
+                <button onclick="confirmBulkTransfer()" class="flex-1 bg-orange-500 text-white font-black py-3 rounded-xl shadow-lg hover:bg-orange-600">ยืนยันการย้าย</button>
+            </div>
+        </div>
+    </div>
+    <!-- Modal: Add Employee -->
+    <div id="addEmpModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-slide-in">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-black">เพิ่มพนักงานใหม่</h3>
+                <button onclick="closeModal('addEmpModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="handleAddEmployee(event)" class="space-y-4">
+                <input type="text" id="newEmpName" placeholder="ชื่อ-นามสกุล" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold" required>
+                <input type="text" id="newEmpCode" placeholder="รหัสพนักงาน" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold" required>
+                <input type="text" id="newEmpPosition" placeholder="ตำแหน่ง" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black text-slate-400 uppercase">กำหนดคะแนนรวมเริ่มต้น</label>
+                    <input type="number" id="newEmpBaseScore" value="30" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold text-blue-600">
+                </div>
+                <div class="flex gap-2 pt-4">
+                    <button type="button" onclick="closeModal('addEmpModal')" class="flex-1 bg-slate-100 font-bold py-3 rounded-xl">ยกเลิก</button>
+                    <button type="submit" class="flex-1 bg-blue-600 text-white font-black py-3 rounded-xl shadow-lg">บันทึก</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Modal: Manage History -->
+    <div id="manageHistoryModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-slide-in max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-black flex items-center gap-2"><i class="fas fa-history text-blue-600"></i> จัดการคะแนนและประวัติ</h3>
+                <button onclick="closeModal('manageHistoryModal')" class="text-slate-400"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-6 flex justify-between items-center">
+                <div>
+                    <p id="mh-emp-name" class="font-black text-slate-800 text-lg">...</p>
+                    <p id="mh-emp-code" class="text-slate-500 font-bold text-sm">...</p>
+                </div>
+                <div class="text-right">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">คะแนนรวมเริ่มต้น</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="mh-base-score" class="w-20 bg-white border border-blue-200 rounded-lg px-2 py-1 font-black text-blue-600 text-center">
+                        <button onclick="updateBaseScore()" class="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-black">บันทึก</button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <h4 class="text-[10px] font-black text-slate-400 uppercase mb-3">รายการประวัติ (ลบเพื่อคืนคะแนน / ยกเลิกสถานะ)</h4>
+                <div id="mh-history-list" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+    <!-- Modal: Manage Rules -->
+    <div id="manageRulesModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-slide-in">
+            <div class="flex justify-between items-center mb-6"><h3 class="font-black text-lg">ตั้งค่าเกณฑ์และคะแนน</h3><button onclick="closeModal('manageRulesModal')"><i class="fas fa-times"></i></button></div>
+            <div class="bg-blue-50 p-4 rounded-xl mb-6 border border-blue-100">
+                <h4 class="text-[10px] font-black uppercase text-blue-600 mb-2">คะแนนตั้งต้นมาตรฐาน (สำหรับพนักงานทุกคน)</h4>
+                <div class="flex gap-2">
+                    <input type="number" id="globalBaseScoreInput" class="flex-1 p-2 rounded-lg text-sm font-bold text-center border-none" value="30" placeholder="คะแนน">
+                    <button onclick="applyGlobalBaseScore()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black whitespace-nowrap hover:bg-blue-700 transition">ปรับปรุงทุกคน</button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-2">* จะเปลี่ยนคะแนนตั้งต้นของพนักงานทั้งหมดเป็นค่านี้ทันที</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl mb-4 border border-slate-100">
+                 <h4 class="text-[10px] font-black uppercase text-slate-500 mb-2">เพิ่ม/แก้ไขประเภทการลา</h4>
+                 <form onsubmit="addRule(event)" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="newRuleName" placeholder="ชื่อ (เช่น ลากิจ)" class="w-full p-2 rounded-lg text-xs font-bold border-none" required>
+                        <input type="number" step="0.1" id="newRuleDed" placeholder="หัก (ปกติ)" class="w-full p-2 rounded-lg text-xs font-bold border-none" required>
+                    </div>
+<div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">หมวดหมู่สถิติ (นับเป็น...)</label>
+                        <select id="newRuleCategory" class="w-full bg-white border border-slate-200 p-2 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                            <option value="leave">นับเป็น "วันลา" (Leave)</option>
+                            <option value="penalty">นับเป็น "สาย/ขาด/โทษ" (Penalty)</option>
+                            <option value="none">ไม่นับสถิติ (เช่น มาทำงาน, วันหยุด)</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-4">
+                         <div class="flex items-center gap-2"><input type="checkbox" id="newRuleSelectable" checked class="rounded text-green-600 focus:ring-green-500"><label for="newRuleSelectable" class="text-xs font-bold text-slate-600">ให้พนักงานเลือกได้</label></div>
+                        <div class="flex items-center gap-2"><input type="checkbox" id="enableTier" onchange="toggleTierInputs()" class="rounded text-blue-600 focus:ring-blue-500"><label for="enableTier" class="text-xs font-bold text-slate-600">ใช้เกณฑ์ขั้นบันได</label></div>
+                    </div>
+                    
+                    <!-- Updated Tier Input Section -->
+                    <div id="tierInputs" class="hidden space-y-3 bg-white p-3 rounded-lg border border-slate-200 mt-2">
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                             <div><label class="text-[9px] text-slate-400 block">นับตาม (สะสมต่อปี)</label><select id="tierCountType" onchange="updateTierUnitLabels()" class="w-full text-xs font-bold p-1 border rounded"><option value="times">จำนวนครั้ง</option><option value="days">จำนวนวัน</option></select></div>
+                             <div><label class="text-[9px] text-slate-400 block">วิธีหักคะแนน</label><select id="tierDeductType" class="w-full text-xs font-bold p-1 border rounded"><option value="per_request">ต่อครั้งที่ลา</option><option value="per_day">ต่อวันที่ลา</option></select></div>
+                        </div>
+                        
+                        <div class="text-[10px] font-black text-slate-500 uppercase">กำหนดช่วงเกณฑ์ (สูงสุดถึงต่ำสุด)</div>
+                        <div id="tierRowsContainer" class="space-y-2">
+                            <!-- JS will inject rows here -->
+                        </div>
+                        
+                        <button type="button" onclick="addTierRow()" class="w-full py-2 border-2 border-dashed border-slate-200 text-slate-400 rounded-lg text-xs font-bold hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition flex items-center justify-center gap-1">
+                            <i class="fas fa-plus"></i> เพิ่มช่วงคะแนน
+                        </button>
+
+                        <div class="flex items-center gap-2 text-xs bg-red-50 p-2 rounded-lg border border-red-100 mt-2">
+                            <span class="text-red-700 font-bold whitespace-nowrap flex-1">กรณีเกินกว่ากำหนดทั้งหมด ให้หัก:</span>
+                            <input type="number" step="0.1" id="tierDefaultRate" class="w-16 text-center border rounded p-1 font-bold text-red-600 focus:ring-1 focus:ring-red-500" value="1">
+                            <span class="text-red-700 font-bold">คะแนน</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-slate-800 text-white py-2 rounded-lg text-xs font-black hover:bg-slate-900 transition shadow-lg">บันทึกรายการ</button>
+                 </form>
+            </div>
+            <div class="overflow-y-auto max-h-64">
+                <table class="w-full text-sm">
+                    <thead><tr class="text-[10px] text-slate-400 uppercase"><th class="text-center py-2 w-10">เลือกได้</th><th class="text-left py-2">ประเภท</th><th class="text-center py-2">หัก</th><th class="text-center py-2">เงื่อนไข</th><th class="text-right py-2"></th></tr></thead>
+                    <tbody id="rulesTableBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div><div class="mt-8 border-t border-slate-200 pt-6">
+                <h4 class="font-black text-sm text-slate-800 mb-4 flex items-center gap-2 uppercase tracking-wider">
+                    <i class="fas fa-medal text-yellow-500"></i> จัดการเกรดและสีการ์ด (คะแนนความประพฤติ)
+                </h4>
+                
+                <div class="bg-slate-50 p-4 rounded-xl mb-4 border border-slate-100 grid grid-cols-2 gap-2">
+                    <input type="text" id="newGradeName" placeholder="ชื่อเกรด (เช่น A+)" class="p-2 rounded-lg text-xs font-bold border-none focus:ring-2 focus:ring-blue-500">
+                    <input type="number" id="newGradeMin" placeholder="ขั้นต่ำ (%)" class="p-2 rounded-lg text-xs font-bold border-none focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="newGradeText" placeholder="ข้อความแสดง (เช่น ยอดเยี่ยม)" class="col-span-2 p-2 rounded-lg text-xs font-bold border-none focus:ring-2 focus:ring-blue-500">
+                    
+                    <select id="newGradeColor" class="col-span-2 p-2 rounded-lg text-xs font-bold text-slate-700 outline-none border-none bg-white">
+                        <option value="gold">สีทอง (Gold/Yellow) - สำหรับระดับสูงสุด</option>
+                        <option value="green">สีเขียว (Green) - ดี</option>
+                        <option value="blue">สีน้ำเงิน (Blue) - ปกติ</option>
+                        <option value="purple">สีม่วง (Purple) - พิเศษ</option>
+                        <option value="orange">สีส้ม (Orange) - เตือน</option>
+                        <option value="red">สีแดง (Red) - อันตราย</option>
+                        <option value="gray">สีเทา (Gray) - ทั่วไป</option>
+                        <option value="black">สีดำ (Black) - เข้มข้น</option>
+                    </select>
+                    
+                    <button onclick="addGrade()" class="col-span-2 bg-slate-800 text-white py-2 rounded-lg text-xs font-black hover:bg-slate-900 transition shadow-lg">บันทึกเกรด</button>
+                </div>
+
+                <div class="overflow-y-auto max-h-48 border border-slate-100 rounded-xl">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-100 sticky top-0"><tr class="text-[10px] text-slate-500 uppercase"><th class="pl-4 py-2">เกรด</th><th class="text-center py-2">ขั้นต่ำ</th><th class="text-center py-2">สี</th><th class="text-right pr-4 py-2">ลบ</th></tr></thead>
+                        <tbody id="gradesTableBody" class="divide-y divide-slate-100 bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+    </div>
+    <!-- Modal: Manage Yards -->
+    <div id="manageYardsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-slide-in flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-6"><h3 class="font-black text-xl text-slate-800">จัดการสถานที่ทำงาน</h3><button onclick="closeModal('manageYardsModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button></div>
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
+                <h4 class="text-xs font-bold text-slate-500 mb-2 uppercase">เพิ่มสถานที่ใหม่</h4>
+                <div class="flex gap-2"><input type="text" id="newYardName" placeholder="ชื่อสถานที่" class="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold"><input type="time" id="newYardTime" value="08:30" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold w-24"><button onclick="addYard()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-black hover:bg-blue-700 transition">เพิ่ม</button></div>
+            </div>
+            <div class="overflow-y-auto flex-1">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-white sticky top-0 text-slate-400 font-bold uppercase text-[10px]"><tr><th class="p-2">ชื่อสถานที่</th><th class="p-2 text-center">เวลาเข้างาน</th><th class="p-2 text-right">จัดการ</th></tr></thead>
+                    <tbody id="yardsTableBody" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <!-- Modal: Yard Daily Detail -->
+    <div id="yardDailyDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-slide-in max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <div><h3 class="font-black text-xl text-slate-800" id="yardDetailTitle">รายละเอียด Yard</h3><p class="text-sm text-slate-500" id="yardDetailDate"></p></div>
+                <button onclick="closeModal('yardDailyDetailModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="flex space-x-2 mb-4 bg-slate-100 p-1 rounded-xl">
+                <button onclick="filterYardDetail('all')" class="flex-1 py-2 rounded-lg text-sm font-bold bg-white text-slate-800 shadow-sm" id="btn-yd-all">ทั้งหมด</button>
+                <button onclick="filterYardDetail('present')" class="flex-1 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-white/50" id="btn-yd-present">มาทำงาน</button>
+                <button onclick="filterYardDetail('late')" class="flex-1 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-white/50" id="btn-yd-late">สาย</button>
+                <button onclick="filterYardDetail('absent')" class="flex-1 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-white/50" id="btn-yd-absent">ขาด/ลา</button>
+            </div>
+            <div class="overflow-y-auto flex-1"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] sticky top-0"><tr><th class="p-3">พนักงาน</th><th class="p-3">ตำแหน่ง</th><th class="p-3 text-center">สถานะ</th></tr></thead><tbody id="yardDetailList" class="divide-y divide-slate-100"></tbody></table></div>
+        </div>
+    </div>
+    <!-- Modal: Import Excel -->
+    <div id="importExcelModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-md animate-slide-in">
+            <div class="flex justify-between items-center mb-4"><h3 class="font-black text-xl">นำเข้า Excel</h3><button onclick="closeModal('importExcelModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button></div>
+            <input type="file" id="excelFileInput" accept=".xlsx, .xls" class="block w-full mb-4">
+            <button onclick="processExcelFile()" class="w-full bg-green-600 text-white font-black py-3 rounded-xl">เริ่มนำเข้า</button>
+        </div>
+    </div>
+
+    <!-- Modal: Request Leave (RESTORED) -->
+    <div id="leaveModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-md animate-slide-in">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-black text-xl">ขอลาหยุด</h3>
+                <button onclick="closeModal('leaveModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="leaveForm" onsubmit="handleLeaveSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">ประเภทการลา</label>
+                    <select id="leaveType" onchange="updateLeaveInfo()" class="w-full bg-slate-100 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"></select>
+                    <p id="leaveInfoText" class="text-xs text-blue-500 font-bold ml-1 mt-1"></p>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">ตั้งแต่วันที่</label>
+                        <input type="date" id="leaveStartDate" required class="w-full bg-slate-100 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">ถึงวันที่</label>
+                        <input type="date" id="leaveEndDate" required class="w-full bg-slate-100 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">เหตุผลการลา <span class="text-red-500">*</span></label>
+                    <textarea id="leaveReason" required rows="3" class="w-full bg-slate-100 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="ระบุเหตุผล (จำเป็นต้องระบุ)..."></textarea>
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-600 text-white font-black py-3 rounded-xl shadow-lg hover:bg-blue-700 transition transform active:scale-95">ส่งคำขอ</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 transition-all duration-500 translate-y-32 z-[200]">
+        <i class="fas fa-info-circle text-blue-400"></i><span id="toast-message" class="text-sm font-bold"></span>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+        // Updated Firebase Configuration for hrv2-5a910
+        const firebaseConfig = {
+            apiKey: "AIzaSyD882G0IdrmDrvL-msOBTs8SXabO4xTVzo",
+            authDomain: "hrv2-5a910.firebaseapp.com",
+            databaseURL: "https://hrv2-5a910-default-rtdb.firebaseio.com",
+            projectId: "hrv2-5a910",
+            storageBucket: "hrv2-5a910.firebasestorage.app",
+            messagingSenderId: "148469028946",
+            appId: "1:148469028946:web:47a8f5d4aa2f1f8373e78b",
+            measurementId: "G-7ESNYYFJBZ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        const ADMIN_PIN = "admin";
+
+        let appData = {
+            currentUserId: 0,
+            adminSelectedSite: "ระยอง",
+grades: [
+                { min: 90, name: 'S-Class', text: 'ระดับพระเจ้า', color: 'gold' },
+                { min: 80, name: 'A', text: 'ดีเยี่ยม', color: 'green' },
+                { min: 60, name: 'B', text: 'ผ่านเกณฑ์', color: 'blue' },
+                { min: 40, name: 'C', text: 'ต้องปรับปรุง', color: 'orange' },
+                { min: 0,  name: 'F', text: 'วิกฤต', color: 'red' }
+            ],
+            locations: [
+                {name: "ระยอง", startTime: "08:30"}, 
+                {name: "หนองยายบู่", startTime: "08:30"}, 
+                {name: "28 ไร่", startTime: "08:30"}, 
+                {name: "ซอย 5", startTime: "08:30"}, 
+                {name: "มหาพร", startTime: "08:30"}
+            ],
+            employees: [],
+            history: [],
+            leaveRules: {
+                1: { name: "ลาป่วย", deduction: 0.5, note: "ตามแพทย์สั่ง" },
+                2: { name: "ลาป่วยจากการทำงาน", deduction: 0, note: "ตามแพทย์สั่ง" },
+                3: { name: "ลากิจ", deduction: 0.5, note: "ล่วงหน้า 1 วัน" },
+                4: { name: "ลาคลอด", deduction: 0, note: "ล่วงหน้า 7 วัน" },
+                5: { name: "ลาพักผ่อนประจำปี", deduction: 0, note: "ตามสิทธิ์สะสม" },
+                6: { name: "มาสาย < 30 นาที", deduction: 0.5, isSystem: true },
+                7: { name: "มาสาย > 30 นาที", deduction: 1.0, isSystem: true },
+                8: { name: "ขาดงาน", deduction: 1.0, isSystem: true },
+                11: { name: "มาทำงาน", deduction: 0, isSystem: true }
+            },
+            holidays: {
+                weekly: [],
+                annual: []
+            }
+        };
+
+        // User Session
+        let session = {
+            isLoggedIn: false,
+            role: null, // 'admin' or 'employee'
+            userId: null
+        };
+
+        let tempEmpId = null;
+        let calendarTargetEmpId = null;
+        let calendarCurrentDate = new Date();
+        let xlsxLoaded = false;
+
+        async function loadSheetJS() {
+            if (xlsxLoaded) return;
+            return new Promise((resolve) => {
+                if(window.XLSX) { xlsxLoaded = true; resolve(); }
+                else { setTimeout(resolve, 1000); }
+            });
+        }
+
+        async function init() {
+            try {
+                await signInAnonymously(auth);
+                // Load data first, then check login status
+                onValue(ref(db, 'hrms_v6_data'), (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        appData = { ...appData, ...data, 
+                            employees: data.employees || [],
+                            history: data.history ? Object.values(data.history) : [],
+                            leaveRules: data.leaveRules || appData.leaveRules,
+                            holidays: {
+                                weekly: (data.holidays && data.holidays.weekly) || [],
+                                annual: (data.holidays && data.holidays.annual) || []
+                            }
+                        };
+                        // Migration: If locations are strings, convert to objects
+                        if (appData.locations.length > 0 && typeof appData.locations[0] === 'string') {
+                            appData.locations = appData.locations.map(l => ({ name: l, startTime: "08:30" }));
+                        }
+                    } else saveData();
+                    
+                    document.getElementById('loadingOverlay').classList.add('opacity-0', 'pointer-events-none');
+                    
+                    // Check LocalStorage for Auto Login
+                    const storedAuth = localStorage.getItem('2ps_auth');
+                    if (storedAuth && !session.isLoggedIn) {
+                        const authData = JSON.parse(storedAuth);
+                        attemptLogin(authData.username, authData.password, true); // Silent login
+                    }
+                    
+                    // If already logged in, just update UI
+                    if(session.isLoggedIn) {
+                        updateUI();
+                    }
+                });
+            } catch (err) { console.error(err); }
+            
+            setInterval(() => {
+                const el = document.getElementById('emp-current-time');
+                if (el) el.innerText = new Date().toLocaleTimeString('th-TH');
+            }, 1000);
+            document.getElementById('currentDateDisplay').innerText = new Date().toLocaleDateString('th-TH', { dateStyle: 'full' });
+        }
+
+        async function saveData() { await set(ref(db, 'hrms_v6_data'), appData); }
+
+        // --- LOGIN LOGIC ---
+        window.handleLogin = (e) => {
+            e.preventDefault();
+            const u = document.getElementById('loginUsername').value.trim();
+            const p = document.getElementById('loginPassword').value.trim();
+            const remember = document.getElementById('rememberMe').checked;
+            
+            attemptLogin(u, p, false, remember);
+        };
+
+        function attemptLogin(u, p, isSilent = false, remember = false) {
+            // Admin Check
+            if (u === 'admin' && p === 'admin') {
+                loginSuccess('admin', null, remember, u, p);
+                return;
+            }
+
+            // Employee Check
+            const emp = appData.employees.find(e => e.username === u && e.password === p);
+            if (emp) {
+                loginSuccess('employee', emp.id, remember, u, p);
+                return;
+            }
+
+            if (!isSilent) alert("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+        }
+
+        function loginSuccess(role, userId, remember, u, p) {
+            session = { isLoggedIn: true, role, userId };
+            appData.currentUserId = userId || 0;
+
+            if (remember) {
+                localStorage.setItem('2ps_auth', JSON.stringify({ username: u, password: p }));
+            }
+
+            // Hide Login, Show App
+            const loginScreen = document.getElementById('loginScreen');
+            loginScreen.classList.add('login-fade-out');
+            setTimeout(() => loginScreen.classList.add('hidden'), 500); // Completely hide after fade
+            
+            const mainApp = document.getElementById('mainApp');
+            mainApp.classList.remove('hidden');
+            mainApp.classList.add('flex');
+
+            // UI Adjustments based on Role
+            const roleTabs = document.getElementById('roleTabs');
+            const adminSwitcher = document.getElementById('adminUserSwitcher');
+            const userDisplay = document.getElementById('loggedInUserDisplay');
+
+            if (role === 'admin') {
+                roleTabs.classList.remove('hidden');
+                adminSwitcher.classList.remove('hidden'); // Admin can switch user context
+                adminSwitcher.classList.add('md:flex');
+                userDisplay.innerText = "ผู้ใช้งาน: Admin";
+                switchRole('admin'); // Default to Admin view
+            } else {
+                roleTabs.classList.add('hidden'); // Employees don't see tabs
+                adminSwitcher.classList.add('hidden');
+                adminSwitcher.classList.remove('md:flex');
+                
+                const emp = appData.employees.find(e => e.id === userId);
+                userDisplay.innerText = `ผู้ใช้งาน: ${emp ? emp.name : 'พนักงาน'}`;
+                switchRole('employee');
+            }
+            updateUI();
+        }
+
+        window.handleLogout = () => {
+            localStorage.removeItem('2ps_auth');
+            location.reload(); // Simple reload to reset everything
+        };
+        
+        // --- EXISTING LOGIC ---
+
+        function calculateScores() {
+            const currentYear = new Date().getFullYear(); // Updated: Yearly Reset Logic
+            appData.employees.forEach(emp => {
+                let deduction = 0;
+                // Only subtract deduction if status is confirmed (Present, Penalty, Approved) AND in current year
+                const history = appData.history.filter(h => {
+                    const hYear = new Date(h.date).getFullYear();
+                    return h.empId === emp.id && 
+                           (h.status === 'Approved' || h.status === 'Present' || h.status === 'Penalty') &&
+                           hYear === currentYear;
+                });
+                history.forEach(h => deduction += h.deduction || 0);
+                const base = emp.baseScore || 30;
+                emp.score = Math.max(0, base - deduction);
+            });
+        }
+
+        function updateUI() {
+            calculateScores();
+            renderUserSwitcher();
+            renderEmployeeView();
+            // Only render admin/manager views if admin
+            if(session.role === 'admin') {
+                renderAdminView();
+                renderAdminAllEmployees();
+                renderManagerView();
+            }
+            renderLeaveTypeSelect();
+        }
+
+        function renderUserSwitcher() {
+            const select = document.getElementById('userSwitcher');
+            if (!select) return;
+            select.innerHTML = '';
+            appData.employees.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.id; opt.text = e.name; opt.selected = e.id == appData.currentUserId;
+                select.appendChild(opt);
+            });
+        }
+
+        function renderLeaveTypeSelect() {
+            const select = document.getElementById('leaveType');
+            if(!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '';
+            Object.entries(appData.leaveRules).forEach(([k, v]) => {
+                // Show only if NOT system AND isSelectable is true (or undefined which defaults to true)
+                if (!v.isSystem && v.isSelectable !== false) {
+                    const opt = document.createElement('option');
+                    opt.value = k;
+                    opt.text = v.name;
+                    select.appendChild(opt);
+                }
+            });
+            if(currentVal && appData.leaveRules[currentVal] && appData.leaveRules[currentVal].isSelectable !== false) {
+                 select.value = currentVal;
+            } else if (select.options.length > 0) {
+                 select.value = select.options[0].value;
+            }
+            updateLeaveInfo();
+        }
+
+        function getTodayStr() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        // --- EMPLOYEE VIEW (UPDATED LOGIC) ---
+        function renderEmployeeView() {
+            const emp = appData.employees.find(e => e.id == appData.currentUserId);
+            if (!emp) return; 
+
+            const base = emp.baseScore || 30;
+            document.getElementById('emp-name-display').innerText = emp.name;
+            document.getElementById('emp-pos-display').innerText = emp.position || 'พนักงาน';
+            document.getElementById('emp-code-display').innerText = 'รหัส: ' + emp.code;
+            document.getElementById('emp-score').innerText = emp.score;
+            document.getElementById('emp-base-display').innerText = `/ ${base}`;
+            
+            // Show Start Time
+            const yard = appData.locations.find(l => (typeof l === 'object' ? l.name : l) === emp.location);
+            const startTime = yard ? (yard.startTime || "08:30") : "08:30";
+            document.getElementById('emp-work-start-time').innerText = `เข้างานปกติ ${startTime} น.`;
+
+// -----------------------------------------------------------
+            // 🟢 4. ส่วนแสดงผลเกรดและสี (วางใน renderEmployeeView)
+            // -----------------------------------------------------------
+
+            // 1. คำนวณ % คะแนน
+            // (ถ้าคะแนนเต็มเป็น 0 ให้ถือว่าได้ 0%)
+            const pct = (base > 0) ? (emp.score / base) * 100 : 0;
+
+            const card = document.getElementById('emp-score-card');
+            const statusText = document.getElementById('emp-status-text');
+            const bar = document.getElementById('emp-score-bar');
+
+            // 2. ดึงข้อมูลเกรดมาเรียง (จากคะแนนมาก -> น้อย)
+            // ถ้าแอดมินยังไม่เคยตั้งค่า ให้ใช้ค่า Default สีฟ้าไปก่อน
+            const gradesList = (appData.grades && appData.grades.length > 0) 
+                               ? appData.grades 
+                               : [{ min: 0, name: 'Normal', text: 'ปกติ', color: 'blue' }];
+            
+            const sortedGrades = [...gradesList].sort((a,b) => b.min - a.min);
+            
+            // 3. เปรียบเทียบหาเกรดที่ได้ (ตัวแรกที่คะแนนถึงเกณฑ์)
+            let currentGrade = sortedGrades.find(g => pct >= g.min);
+            
+            // กรณีคะแนนต่ำเตี้ยเรี่ยดินจนไม่เข้าเกณฑ์ไหนเลย
+            if (!currentGrade) {
+                currentGrade = { name: 'F-', text: 'ต่ำกว่าเกณฑ์', color: 'gray' };
+            }
+
+            // 4. แปลงชื่อสีเป็น Class (ดึงจาก colorMap ที่ประกาศไว้ข้างบน)
+            // ถ้าหาสีไม่เจอ ให้ใช้สีเทา
+            const colorClasses = colorMap[currentGrade.color] || colorMap['gray'];
+
+            // 5. พ่นค่าลงหน้าจอ (Update UI)
+            
+            // 5.1 รีเซ็ต Class การ์ดให้สะอาดก่อน
+            card.className = "rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group transition-all duration-700";
+            
+            // 5.2 ใส่สีพื้นหลังใหม่ (Gradient)
+            // colorClasses[0] = สีเริ่ม, colorClasses[1] = สีจบ
+            card.classList.add("bg-gradient-to-br", colorClasses[0], colorClasses[1]);
+
+            // 5.3 อัปเดตหัวข้อการ์ด (ใส่ชื่อเกรด เช่น A+)
+const headerHtml = `
+                <div class="flex flex-row justify-between items-center w-full">
+                    <span class="text-sm font-bold opacity-90">คะแนนความประพฤติ (ปีนี้)</span>
+                    
+                    <span class="text-5xl font-black text-white drop-shadow-lg tracking-tighter border-b-4 border-white/20 leading-none pb-1 ml-2" 
+                          style="text-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                        ${currentGrade.name}
+                    </span>
+                </div>`;
+            
+            // ค้นหา <h3> ในการ์ดแล้วเปลี่ยนข้อความ
+            const headerEl = card.querySelector('h3');
+            if(headerEl) {
+                // ล้าง Class เดิมของ h3 ออกเพื่อให้จัด Layout ใหม่ได้อิสระ
+                headerEl.className = "w-full"; 
+                headerEl.innerHTML = headerHtml;
+            }
+            
+            // 5.4 อัปเดตข้อความสถานะ (เช่น ยอดเยี่ยม)
+            statusText.innerText = currentGrade.text;
+            
+            // 5.5 เปลี่ยนสีพื้นหลังของคำว่าสถานะ (ใช้สีจางๆ ให้ดูหรู)
+            statusText.className = `text-[10px] font-bold text-white inline-block px-3 py-1 rounded-full bg-white/20 backdrop-blur-md border border-white/20 shadow-inner`;
+            
+            // 5.6 อัปเดตหลอดพลัง (Bar)
+            bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            
+            // -----------------------------------------------------------
+
+            // History & Stats Logic
+            const historyBody = document.getElementById('emp-history-list');
+            if (historyBody) {
+                historyBody.innerHTML = '';
+                
+                const currentMonth = new Date().getMonth();
+                const currentYear = new Date().getFullYear();
+                
+                const myHistory = appData.history.filter(h => h.empId == emp.id).sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+                
+                // Calculate Total Monthly OT
+                let totalMonthlyOT = 0;
+                myHistory.forEach(h => {
+                    const d = new Date(h.date);
+                    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && h.otHours) {
+                        totalMonthlyOT += parseFloat(h.otHours);
+                    }
+                });
+                const otSumEl = document.getElementById('emp-ot-sum');
+                if(otSumEl) otSumEl.innerText = totalMonthlyOT;
+                
+                // --- LOGIC UPDATE HERE: แยกประเภทการนับ ---
+                
+                // 1. นับการลา (Leave): Type <= 5 (รวม Pending และ Approved เพื่อให้เห็นยอดทันทีที่ส่ง)
+                const leaveCount = myHistory.filter(h => 
+                    parseInt(h.type) <= 5 && 
+                    (h.status === 'Approved' || h.status === 'Pending') && 
+                    new Date(h.date).getFullYear() === currentYear
+                ).length;
+
+                // 2. นับสาย/โทษ (Penalty): นับ Type 6, 7 (สาย), Type 8 (ขาด) หรือสถานะ Penalty
+                // (ตัดตรรกะเดิมที่นับ deduction > 0 ออก เพื่อไม่ให้นับรวมการลาที่โดนหักคะแนน)
+                const penaltyCount = myHistory.filter(h => {
+                    const isYear = new Date(h.date).getFullYear() === currentYear;
+                    const type = parseInt(h.type);
+                    // 6=สาย<30, 7=สาย>30, 8=ขาดงาน
+                    const isDiscipline = (type === 6 || type === 7 || type === 8 || h.status === 'Penalty');
+                    return isYear && isDiscipline;
+                }).length;
+                
+                // Update UI Text
+                const elLeaveCard = document.getElementById('stat-leave-count-card');
+                if(elLeaveCard) elLeaveCard.innerText = leaveCount;
+                
+                const elPenaltyCard = document.getElementById('stat-penalty-count-card');
+                if(elPenaltyCard) elPenaltyCard.innerText = penaltyCount;
+
+                // Render Table
+                myHistory.forEach(h => {
+                    const row = document.createElement('tr');
+                    const statusBadge = h.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' : (h.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700');
+                    const otDisplay = h.otHours ? `<span class="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold">+${h.otHours} ชม.</span>` : '-';
+                    
+                    let actionHtml = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${statusBadge}">${h.status}</span>`;
+                    if (h.status === 'Pending') {
+                        actionHtml += `<button onclick="cancelRequest(${h.id})" class="ml-2 text-slate-400 hover:text-red-500 transition" title="ยกเลิกคำขอ"><i class="fas fa-trash-alt"></i></button>`;
+                    }
+
+                    let timeStr = "-";
+                    if (h.timestamp) {
+                        const d = new Date(h.timestamp);
+                        timeStr = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} น.`;
+                    }
+
+                    row.innerHTML = `<td class="px-6 py-4 text-xs">${h.date}</td>
+                                     <td class="px-6 py-4 text-xs font-bold text-slate-600">${timeStr}</td>
+                                     <td class="px-6 py-4 font-bold">${appData.leaveRules[h.type]?.name || 'พิเศษ'}</td>
+                                     <td class="px-6 py-4 italic text-xs">"${h.reason}"</td>
+                                     <td class="px-6 py-4 text-center">${otDisplay}</td>
+                                     <td class="px-6 py-4 text-center font-black ${h.deduction > 0 ? 'text-red-500' : 'text-slate-300'}">-${h.deduction||0}</td>
+                                     <td class="px-6 py-4 text-center flex items-center justify-center">${actionHtml}</td>`;
+                    historyBody.appendChild(row);
+                });
+            }
+
+            // Check In Status for Today
+            const today = new Date().toISOString().slice(0, 10); // Simple date format
+            const hasChecked = appData.history.find(h => h.empId == emp.id && h.date === today && (h.type == 11 || h.type == 6 || h.type == 7));
+            const actionContainer = document.getElementById('attendance-actions');
+            if (actionContainer) {
+                if (hasChecked) {
+                     // Extract Time
+                     let checkTime = "-";
+                     if(hasChecked.timestamp) {
+                        const d = new Date(hasChecked.timestamp);
+                        checkTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} น.`;
+                     } else if (hasChecked.checkInTime) {
+                        checkTime = hasChecked.checkInTime;
+                     }
+                     actionContainer.innerHTML = `<div class="bg-green-600 text-white px-8 py-4 rounded-3xl font-black flex items-center gap-3 shadow-lg shadow-green-200 animate-slide-in"><i class="fas fa-check-circle text-2xl"></i> <div><div>บันทึกเวลาแล้ว</div><div class="text-xs font-normal opacity-80">เวลา ${checkTime}</div></div></div>`;
+                }
+                else actionContainer.innerHTML = ``;
+            }
+        }
+
+        // --- ACTIONS ---
+        // NEW: Function to cancel request
+        window.cancelRequest = function(id) {
+            const record = appData.history.find(h => h.id === id);
+            // Verify ownership and status
+            if (record && record.empId === appData.currentUserId && record.status === 'Pending') {
+                if(confirm("คุณต้องการยกเลิกคำขอนี้ใช่หรือไม่?")) {
+                    appData.history = appData.history.filter(h => h.id !== id);
+                    saveData();
+                    showToast("ยกเลิกคำขอเรียบร้อยแล้ว");
+                    updateUI(); // Refresh UI
+                }
+            } else {
+                showToast("ไม่สามารถยกเลิกรายการนี้ได้");
+            }
+        };
+
+        window.updateOT = function(empId, otValue) {
+             const date = document.getElementById('admDateSelector').value || getTodayStr();
+             // Fix: Ensure NaN is converted to 0
+             let hours = parseFloat(otValue);
+             if (isNaN(hours)) hours = 0;
+
+             // Check if record exists
+             const existingIndex = appData.history.findIndex(h => h.empId == empId && h.date === date);
+
+             if (existingIndex !== -1) {
+                 appData.history[existingIndex].otHours = hours;
+             } else {
+                 // Create Present record with OT
+                 appData.history.push({ 
+                    id: Date.now() + Math.random(), 
+                    empId: empId, 
+                    date: date, 
+                    type: 11, 
+                    status: 'Present', 
+                    deduction: 0, 
+                    reason: "บันทึก OT อัตโนมัติ",
+                    otHours: hours,
+                    timestamp: new Date().toISOString() 
+                });
+             }
+             saveData();
+             showToast(`บันทึก OT ${hours} ชม. เรียบร้อย`);
+             renderAdminView(); // Refresh to update total month OT
+        };
+
+        // --- ADMIN VIEW ---
+        window.switchAdminSubTab = function(mode) {
+            const btnYard = document.getElementById('btn-adm-tab-yard');
+            const btnAll = document.getElementById('btn-adm-tab-all');
+            const viewYard = document.getElementById('adm-view-yard-container');
+            const viewAll = document.getElementById('adm-view-all-container');
+
+            if(mode === 'yard') {
+                btnYard.classList.add('admin-subtab-active', 'shadow-sm');
+                btnYard.classList.remove('admin-subtab-inactive', 'hover:bg-white/50');
+                btnAll.classList.add('admin-subtab-inactive', 'hover:bg-white/50');
+                btnAll.classList.remove('admin-subtab-active', 'shadow-sm');
+                viewYard.classList.remove('hidden');
+                viewAll.classList.add('hidden');
+            } else {
+                btnAll.classList.add('admin-subtab-active', 'shadow-sm');
+                btnAll.classList.remove('admin-subtab-inactive', 'hover:bg-white/50');
+                btnYard.classList.add('admin-subtab-inactive', 'hover:bg-white/50');
+                btnYard.classList.remove('admin-subtab-active', 'shadow-sm');
+                viewAll.classList.remove('hidden');
+                viewYard.classList.add('hidden');
+                renderAdminAllEmployees();
+            }
+        };
+
+        // NEW: Quick Check Function (Toggle Logic)
+        window.quickCheck = function(empId, typeId) {
+            const date = document.getElementById('admDateSelector').value || getTodayStr();
+            const existingRecord = appData.history.find(h => h.empId == empId && h.date === date);
+
+            // Case 1: Clicked same button -> Undo (Remove record)
+            if (existingRecord && existingRecord.type == typeId) {
+                // ADDED CONFIRMATION HERE
+                if(confirm("คุณต้องการยกเลิกสถานะนี้ใช่หรือไม่?")) {
+                    appData.history = appData.history.filter(h => h.id !== existingRecord.id);
+                    showToast("ยกเลิกการเช็คชื่อเรียบร้อย");
+                }
+            } 
+            // Case 2: Different button or No record -> Save (Overwrite/Add)
+            else {
+                const rule = appData.leaveRules[typeId];
+                let status = 'Present';
+                if (typeId === 8) status = 'Penalty';
+                // Note: saveAttendanceRecord already handles removing old records for the same day (overwrite logic)
+                saveAttendanceRecord(empId, date, typeId, rule.deduction, "เช็คชื่อหน้างาน", status);
+                showToast("บันทึกเรียบร้อย");
+            }
+            
+            saveData();
+            renderAdminView(); // Re-render to show active state
+        };
+
+        // NEW: Edit Check-In Time Logic
+        window.editCheckInTime = function(recordId) {
+            const pin = prompt("กรุณาใส่รหัส Admin เพื่อแก้ไขเวลา:");
+            if (pin !== ADMIN_PIN) {
+                if (pin !== null) alert("รหัสผ่านไม่ถูกต้อง");
+                return;
+            }
+
+            const record = appData.history.find(h => h.id === recordId);
+            if (!record) return;
+
+            let defaultTime = "08:30";
+            if (record.timestamp) {
+                const d = new Date(record.timestamp);
+                defaultTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+            }
+
+            const newTime = prompt("แก้ไขเวลา (HH:mm):", defaultTime);
+            if (!newTime) return;
+
+            const timeParts = newTime.split(':');
+            if (timeParts.length !== 2) { alert("รูปแบบเวลาไม่ถูกต้อง"); return; }
+
+            const h = parseInt(timeParts[0]);
+            const m = parseInt(timeParts[1]);
+
+            if (isNaN(h) || isNaN(m)) { alert("เวลาต้องเป็นตัวเลข"); return; }
+
+            // Construct new date based on the record's date
+            const dateParts = record.date.split('-');
+            const year = parseInt(dateParts[0]);
+            const month = parseInt(dateParts[1]) - 1; // Month is 0-indexed
+            const day = parseInt(dateParts[2]);
+
+            const newDate = new Date(year, month, day, h, m);
+            
+            record.timestamp = newDate.toISOString();
+            // Also update formatted string for display consistency if needed
+            record.checkInTime = newTime;
+
+            saveData();
+            showToast(`แก้ไขเวลาเป็น ${newTime} น. เรียบร้อย`);
+            renderAdminView();
+        }
+
+        window.renderAdminView = function() {
+            const siteSelect = document.getElementById('adminSiteSelector');
+            if (!siteSelect.innerHTML) {
+                appData.locations.forEach(loc => { 
+                    const opt = document.createElement('option'); 
+                    // Support object structure
+                    const val = typeof loc === 'object' ? loc.name : loc;
+                    opt.value = val; 
+                    opt.text = val; 
+                    siteSelect.appendChild(opt); 
+                });
+                siteSelect.value = appData.adminSelectedSite;
+            } else appData.adminSelectedSite = siteSelect.value;
+
+            // Show Start Time for selected Yard
+            const currentYardObj = appData.locations.find(l => l.name === appData.adminSelectedSite);
+            const startTimeDisplay = currentYardObj ? currentYardObj.startTime : "08:30";
+            document.getElementById('admin-yard-time-display').innerText = `เวลาเข้างาน: ${startTimeDisplay} น.`;
+
+            // Date Selection Logic (Auto-set if empty)
+            const dateInput = document.getElementById('admDateSelector');
+            if (!dateInput.value) {
+                dateInput.value = getTodayStr();
+            }
+            const selectedDate = dateInput.value;
+            const selectedDateObj = new Date(selectedDate);
+            const currentMonth = selectedDateObj.getMonth();
+            const currentYear = selectedDateObj.getFullYear();
+
+            const siteEmps = appData.employees.filter(e => e.location === appData.adminSelectedSite);
+            const tbody = document.getElementById('adm-employee-list');
+            tbody.innerHTML = '';
+            
+            let presentCount = 0;
+            let absentCount = 0;
+
+            siteEmps.forEach(e => {
+                // Get Daily Record
+                const dailyRecords = appData.history.filter(h => h.empId == e.id && h.date === selectedDate);
+                const status = dailyRecords[dailyRecords.length - 1]; 
+                
+                // Calculate Monthly OT
+                let monthlyOT = 0;
+                appData.history.forEach(h => {
+                    if (h.empId == e.id && h.otHours) {
+                        const d = new Date(h.date);
+                        if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+                            monthlyOT += parseFloat(h.otHours);
+                        }
+                    }
+                });
+
+                // Count Stats
+                if (status) {
+                    const type = parseInt(status.type);
+                    if (type === 11 || type === 6 || type === 7) presentCount++;
+                    else absentCount++;
+                }
+                
+                const otValue = (status && status.otHours) ? status.otHours : '';
+
+                // Determine button states
+                const isMa = status && status.type == 11;
+                const isSai = status && (status.type == 6 || status.type == 7);
+                const isKhad = status && status.type == 8;
+
+                // Format Timestamp Display
+                let timestampDisplay = "-";
+                let recordId = null;
+                if (status && status.timestamp) {
+                    const d = new Date(status.timestamp);
+                    timestampDisplay = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} น.`;
+                    recordId = status.id;
+                }
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-4"><input type="checkbox" name="yardSelect" value="${e.id}"></td>
+                    <td class="p-4">
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition" onclick="openManageHistory(${e.id})" title="คลิกเพื่อดูประวัติ">${e.name}</div>
+                                <div class="text-[10px] text-slate-400">${e.code} | ${e.position||'-'}</div>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="quickCheck(${e.id}, 11)" class="w-8 h-8 rounded-full border flex items-center justify-center transition ${isMa ? 'bg-green-500 text-white border-green-600 shadow-md scale-110' : 'bg-white text-slate-300 border-slate-200 hover:border-green-400 hover:text-green-500'}" title="มา"><i class="fas fa-check"></i></button>
+                                <button onclick="quickCheck(${e.id}, 6)" class="w-8 h-8 rounded-full border flex items-center justify-center transition ${isSai ? 'bg-yellow-400 text-white border-yellow-500 shadow-md scale-110' : 'bg-white text-slate-300 border-slate-200 hover:border-yellow-400 hover:text-yellow-500'}" title="สาย"><i class="fas fa-clock"></i></button>
+                                <button onclick="quickCheck(${e.id}, 8)" class="w-8 h-8 rounded-full border flex items-center justify-center transition ${isKhad ? 'bg-red-500 text-white border-red-600 shadow-md scale-110' : 'bg-white text-slate-300 border-slate-200 hover:border-red-400 hover:text-red-500'}" title="ขาด"><i class="fas fa-times"></i></button>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-4 text-center">${status ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${status.type==11 || status.type==6 || status.type==7 ?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}">${appData.leaveRules[status.type]?.name}</span>` : '<span class="text-slate-300 italic text-[10px]">-</span>'}</td>
+                    <td class="p-4 text-center text-xs font-bold text-slate-500 group relative">
+                        ${timestampDisplay}
+                        ${recordId ? `<button onclick="editCheckInTime(${recordId})" class="ml-2 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" title="แก้ไขเวลา"><i class="fas fa-edit"></i></button>` : ''}
+                    </td>
+                    <td class="p-4 text-center">
+                        <input type="number" step="0.5" class="w-16 text-center border rounded bg-blue-50 text-blue-700 font-bold focus:ring-2 focus:ring-blue-500" value="${otValue}" onchange="updateOT(${e.id}, this.value)" placeholder="-">
+                    </td>
+                    <td class="p-4 text-center font-black text-slate-700">${monthlyOT > 0 ? monthlyOT : '-'}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="openCalendarModal(${e.id})" class="text-purple-500 hover:text-purple-700 bg-purple-50 p-2 rounded-lg transition"><i class="fas fa-calendar-alt"></i></button>
+                    </td>
+                    <td class="p-4 text-right flex gap-1 justify-end">
+                        <button onclick="openAdminYardDetail('all')" class="bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 mr-1"><i class="fas fa-list"></i></button>
+                        <button onclick="openManageHistory(${e.id})" class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-50 hover:text-blue-600">ประวัติ</button>
+                        <button onclick="deleteEmployee(${e.id})" class="text-slate-300 hover:text-red-500 p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            document.getElementById('adm-stats-total').innerText = siteEmps.length;
+            document.getElementById('adm-stats-absent').innerText = absentCount;
+            document.getElementById('adm-stats-present').innerText = presentCount;
+            document.getElementById('adm-list-title').innerText = `รายชื่อพนักงาน (${new Date(selectedDate).toLocaleDateString('th-TH')})`;
+
+            const pSelect = document.getElementById('penaltyEmpSelect');
+            pSelect.innerHTML = ''; siteEmps.forEach(e => { const opt = document.createElement('option'); opt.value = e.id; opt.text = e.name; pSelect.appendChild(opt); });
+            const ptSelect = document.getElementById('penaltyType');
+            ptSelect.innerHTML = ''; Object.entries(appData.leaveRules).forEach(([k, v]) => { if (k != 11) { const opt = document.createElement('option'); opt.value = k; opt.text = v.name; ptSelect.appendChild(opt); } });
+        }
+
+        // Updated for Credential Management
+        window.updateEmpCredential = (id, field, value) => {
+            const emp = appData.employees.find(e => e.id === id);
+            if (emp) {
+                emp[field] = value.trim();
+                saveData();
+                // Optional: showToast('บันทึกข้อมูลแล้ว') if you want frequent feedback, but might be annoying while typing
+            }
+        };
+
+        window.renderAdminAllEmployees = function() {
+            const tbody = document.getElementById('adm-all-employee-list');
+            const search = document.getElementById('allEmpSearch').value.toLowerCase();
+            tbody.innerHTML = '';
+            
+            // Get selected month/year for OT calculation
+            const dateInput = document.getElementById('admDateSelector').value || getTodayStr();
+            const dateObj = new Date(dateInput);
+            const currentMonth = dateObj.getMonth();
+            const currentYear = dateObj.getFullYear();
+            
+            appData.employees.forEach(e => {
+                if(e.name.toLowerCase().includes(search) || e.code.toLowerCase().includes(search)) {
+                    // Calculate Monthly OT
+                    let monthlyOT = 0;
+                    appData.history.forEach(h => {
+                        if (h.empId == e.id && h.otHours) {
+                            const d = new Date(h.date);
+                            if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+                                monthlyOT += parseFloat(h.otHours);
+                            }
+                        }
+                    });
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="p-4"><input type="checkbox" name="allEmpSelect" value="${e.id}"></td>
+                        <td class="p-4"><div class="font-bold text-slate-800 cursor-pointer hover:text-blue-600" onclick="openManageHistory(${e.id})">${e.name}</div><div class="text-[10px] text-slate-400">${e.code}</div></td>
+                        <td class="p-4 text-slate-600"><div class="text-xs">${e.position||'-'}</div><div class="text-[9px] bg-slate-100 inline-block px-1 rounded">${e.location}</div></td>
+                        <!-- Credential Inputs -->
+                        <td class="p-4 text-center">
+                            <input type="text" value="${e.username || ''}" onchange="updateEmpCredential(${e.id}, 'username', this.value)" placeholder="Username" class="w-24 text-xs border border-slate-200 rounded px-2 py-1 bg-blue-50/50 focus:bg-white transition text-center text-blue-600 font-bold">
+                        </td>
+                        <td class="p-4 text-center">
+                            <input type="text" value="${e.password || ''}" onchange="updateEmpCredential(${e.id}, 'password', this.value)" placeholder="Password" class="w-24 text-xs border border-slate-200 rounded px-2 py-1 bg-red-50/50 focus:bg-white transition text-center text-red-600 font-bold">
+                        </td>
+
+                        <td class="p-4 text-center">
+                            <button onclick="openCalendarModal(${e.id})" class="text-purple-500 hover:text-purple-700 bg-purple-50 p-2 rounded-lg transition"><i class="fas fa-calendar-alt"></i></button>
+                        </td>
+                        <td class="p-4 text-center font-black text-slate-700">${e.score}</td>
+                        <td class="p-4 text-right">
+                            <button onclick="openManageHistory(${e.id})" class="text-slate-400 hover:text-blue-600"><i class="fas fa-search"></i></button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                }
+            });
+        };
+
+        window.toggleSelectAllAll = function(source) {
+            const boxes = document.getElementsByName('allEmpSelect');
+            boxes.forEach(b => b.checked = source.checked);
+        };
+
+        // --- HOLIDAYS LOGIC (NEW) ---
+        window.openManageHolidaysModal = function() {
+            // Render Weekly
+            const checkboxes = document.getElementsByName('weeklyHoliday');
+            checkboxes.forEach(cb => {
+                cb.checked = appData.holidays.weekly.includes(parseInt(cb.value));
+            });
+
+            // Render Annual
+            renderAnnualHolidaysList();
+            
+            openModal('manageHolidaysModal');
+        };
+
+        window.saveHolidays = function() {
+            // Save Weekly
+            const checkboxes = document.getElementsByName('weeklyHoliday');
+            const selected = [];
+            checkboxes.forEach(cb => {
+                if(cb.checked) selected.push(parseInt(cb.value));
+            });
+            appData.holidays.weekly = selected;
+            saveData();
+            // Note: Annual are saved immediately on add/delete
+        };
+
+        window.addAnnualHoliday = function() {
+            const date = document.getElementById('newHolidayDate').value;
+            const name = document.getElementById('newHolidayName').value;
+            
+            if(!date || !name) { showToast("กรุณากรอกวันที่และชื่อวันหยุด"); return; }
+            
+            if(appData.holidays.annual.some(h => h.date === date)) {
+                showToast("วันนี้ถูกเพิ่มไปแล้ว");
+                return;
+            }
+
+            appData.holidays.annual.push({ date, name });
+            // Sort by date
+            appData.holidays.annual.sort((a,b) => a.date.localeCompare(b.date));
+            
+            saveData();
+            renderAnnualHolidaysList();
+            document.getElementById('newHolidayDate').value = '';
+            document.getElementById('newHolidayName').value = '';
+            showToast("เพิ่มวันหยุดเรียบร้อย");
+        };
+
+        window.deleteAnnualHoliday = function(date) {
+            if(confirm("ต้องการลบวันหยุดนี้?")) {
+                appData.holidays.annual = appData.holidays.annual.filter(h => h.date !== date);
+                saveData();
+                renderAnnualHolidaysList();
+            }
+        };
+
+        window.renderAnnualHolidaysList = function() {
+            const tbody = document.getElementById('annualHolidaysList');
+            tbody.innerHTML = '';
+            
+            if(appData.holidays.annual.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-400 text-xs">ยังไม่มีวันหยุดประจำปี</td></tr>';
+                return;
+            }
+
+            appData.holidays.annual.forEach(h => {
+                tbody.innerHTML += `
+                    <tr class="group hover:bg-slate-50 transition">
+                        <td class="p-3 pl-4 font-bold text-slate-700">${new Date(h.date).toLocaleDateString('th-TH')}</td>
+                        <td class="p-3 text-slate-600">${h.name}</td>
+                        <td class="p-3 text-right pr-4">
+                            <button onclick="deleteAnnualHoliday('${h.date}')" class="text-slate-300 hover:text-red-500 transition"><i class="fas fa-trash-alt"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        };
+
+        // --- NEW: MANAGE YARDS LOGIC ---
+        window.openManageYardsModal = function() {
+            renderYardsList();
+            openModal('manageYardsModal');
+        };
+
+        window.renderYardsList = function() {
+            const tbody = document.getElementById('yardsTableBody');
+            tbody.innerHTML = '';
+            appData.locations.forEach(loc => {
+                // Ensure loc is object
+                const name = typeof loc === 'object' ? loc.name : loc;
+                const time = typeof loc === 'object' ? loc.startTime : "08:30";
+                
+                tbody.innerHTML += `
+                    <tr class="group hover:bg-slate-50">
+                        <td class="p-2 font-bold text-slate-700 text-xs">${name}</td>
+                        <td class="p-2 text-center">
+                            <input type="time" value="${time}" onchange="updateYardTime('${name}', this.value)" class="border border-slate-200 rounded px-2 py-1 text-xs font-bold text-center bg-white focus:ring-2 focus:ring-blue-500">
+                        </td>
+                        <td class="p-2 text-right">
+                            <button onclick="deleteYard('${name}')" class="text-slate-300 hover:text-red-500"><i class="fas fa-trash-alt"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        };
+
+        window.addYard = function() {
+            const name = document.getElementById('newYardName').value.trim();
+            const time = document.getElementById('newYardTime').value;
+            
+            if(!name) { showToast("กรุณากรอกชื่อสถานที่"); return; }
+            
+            // Check duplicates
+            const exists = appData.locations.some(l => (typeof l === 'object' ? l.name : l) === name);
+            if(exists) { showToast("มีสถานที่นี้อยู่แล้ว"); return; }
+            
+            appData.locations.push({name: name, startTime: time});
+            saveData();
+            
+            document.getElementById('newYardName').value = '';
+            renderYardsList();
+            
+            // Update Selectors
+            const siteSelect = document.getElementById('adminSiteSelector');
+            siteSelect.innerHTML = ''; // Force redraw next time
+            if (siteSelect) renderAdminView();
+            
+            showToast("เพิ่มสถานที่เรียบร้อย");
+        };
+
+        window.deleteYard = function(name) {
+            if(confirm(`ยืนยันการลบสถานที่ "${name}"?\n(พนักงานในสังกัดนี้จะยังคงอยู่ แต่ชื่อสถานที่อาจหายไปจากตัวเลือก)`)) {
+                appData.locations = appData.locations.filter(l => (typeof l === 'object' ? l.name : l) !== name);
+                saveData();
+                renderYardsList();
+                // Update Selectors
+                const siteSelect = document.getElementById('adminSiteSelector');
+                siteSelect.innerHTML = '';
+                if(siteSelect) renderAdminView();
+            }
+        };
+
+        window.updateYardTime = function(name, newTime) {
+            const idx = appData.locations.findIndex(l => (typeof l === 'object' ? l.name : l) === name);
+            if(idx !== -1) {
+                appData.locations[idx] = { name: name, startTime: newTime };
+                saveData();
+                showToast(`อัปเดตเวลาเข้างานของ ${name} เป็น ${newTime} น.`);
+                
+                // Refresh views if this yard is selected
+                if(appData.adminSelectedSite === name) {
+                    document.getElementById('admin-yard-time-display').innerText = `เวลาเข้างาน: ${newTime} น.`;
+                }
+            }
+        };
+
+        // --- CALENDAR LOGIC (UPDATED) ---
+        window.openCalendarModal = function(empId) {
+            calendarTargetEmpId = empId || appData.currentUserId; // Default to current user
+            calendarCurrentDate = new Date(); 
+            renderCalendar();
+            openModal('calendarModal');
+        };
+
+        window.changeCalendarMonth = function(delta) {
+            calendarCurrentDate.setMonth(calendarCurrentDate.getMonth() + delta);
+            renderCalendar();
+        };
+
+        window.renderCalendar = function() {
+            const year = calendarCurrentDate.getFullYear();
+            const month = calendarCurrentDate.getMonth();
+            
+            const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            document.getElementById('calMonthYear').innerText = `${monthNames[month]} ${year + 543}`;
+
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // ช่องว่างก่อนวันเริ่มเดือน
+            for(let i=0; i<firstDay; i++) {
+                grid.innerHTML += `<div></div>`;
+            }
+
+            // วนลูปสร้างวันที่ 1 ถึงสิ้นเดือน
+            for(let d=1; d<=daysInMonth; d++) {
+                // 1. สร้างตัวแปร "เวลาของลูปปัจจุบัน" (บังคับเวลาเป็น 00:00:00 เพื่อความชัวร์)
+                const loopDate = new Date(year, month, d);
+                loopDate.setHours(0,0,0,0);
+                const loopTime = loopDate.getTime(); // แปลงเป็นตัวเลข milliseconds
+
+                // 2. Filter ข้อมูล (ใช้ Logic เดียวกับ Admin แต่ครอบคลุมช่วงวัน)
+                const dailyRecords = appData.history.filter(h => {
+                    // เช็คว่าเป็นของพนักงานคนนี้ไหม
+                    if (h.empId != calendarTargetEmpId) return false;
+                    // ไม่เอาสถานะที่ถูกปฏิเสธ
+                    if (h.status === 'Rejected') return false; 
+
+                    // แปลงวันที่เริ่ม (Start) จาก Database เป็น Time
+                    // ข้อดี: new Date("2026-1-6") และ new Date("2026-01-06") จะได้ค่าเวลาเท่ากันเป๊ะ!
+                    const startDate = new Date(h.date);
+                    startDate.setHours(0,0,0,0);
+                    
+                    // แปลงวันที่สิ้นสุด (End) - ถ้าไม่มีให้ใช้วันเดียวกับ Start
+                    const endDate = h.endDate ? new Date(h.endDate) : new Date(h.date);
+                    endDate.setHours(0,0,0,0);
+
+                    // เปรียบเทียบตัวเลข: เวลาในปฏิทิน ต้องอยู่ระหว่าง เริ่มต้น และ สิ้นสุด
+                    return loopTime >= startDate.getTime() && loopTime <= endDate.getTime();
+                });
+
+                // 3. เรียงลำดับเอาตัว "ล่าสุด" (Timestamp มากสุด) ขึ้นก่อน (เพื่อให้เหมือนหน้า Admin)
+                dailyRecords.sort((a, b) => {
+                    const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                    const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                    return tB - tA; 
+                });
+
+                // 4. เลือกตัวแรก (ตัวล่าสุด)
+                const record = dailyRecords.length > 0 ? dailyRecords[0] : null;
+
+                // --- ส่วนแสดงผล (เหมือนเดิม) ---
+                // ตรวจสอบวันหยุด
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayOfWeek = new Date(year, month, d).getDay();
+                const isWeeklyHoliday = appData.holidays.weekly.includes(dayOfWeek);
+                const annualHoliday = appData.holidays.annual.find(h => h.date === dateStr);
+
+                let bgClass = "bg-slate-50";
+                let textClass = "text-slate-700";
+                let badge = "";
+
+                if (annualHoliday) {
+                    bgClass = "bg-purple-100 border border-purple-200";
+                    textClass = "text-purple-700";
+                    badge = `<div class="absolute bottom-1 left-1 text-[8px] text-purple-600 font-bold truncate max-w-full">${annualHoliday.name}</div>`;
+                } else if (isWeeklyHoliday) {
+                    bgClass = "bg-slate-100 border border-slate-200";
+                    textClass = "text-slate-400";
+                    badge = `<div class="absolute bottom-1 left-1 text-[8px] text-slate-400 font-bold">หยุด</div>`;
+                }
+
+                if (record) {
+                      const type = parseInt(record.type);
+                      if (type === 11) { bgClass = "bg-green-100 border border-green-200"; textClass = "text-green-700"; badge=""; }
+                      else if (type === 6 || type === 7) { bgClass = "bg-yellow-100 border border-yellow-200"; textClass = "text-yellow-700"; badge=""; }
+                      else if (type === 8 || record.status === 'Penalty') { bgClass = "bg-red-100 border border-red-200"; textClass = "text-red-700"; badge=""; }
+                      else if (type <= 5) { bgClass = "bg-blue-50 border border-blue-200"; textClass = "text-blue-700"; badge=""; } 
+
+                      if (record.otHours > 0) {
+                          badge += `<div class="absolute bottom-1 right-1 bg-blue-500 text-white text-[8px] px-1 rounded-full shadow font-bold">OT ${record.otHours}</div>`;
+                      }
+                      if (record.deduction > 0) {
+                          badge += `<div class="absolute top-1 right-1 bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full shadow font-bold">-${record.deduction}</div>`;
+                      }
+                }
+
+                let timeDisplay = "";
+                if (record && record.timestamp) {
+                    const type = parseInt(record.type);
+                    if (type === 11 || type === 6 || type === 7) { 
+                        const dObj = new Date(record.timestamp);
+                        timeDisplay = `<div class="text-[9px] font-bold text-slate-500 mt-1">${dObj.getHours().toString().padStart(2,'0')}:${dObj.getMinutes().toString().padStart(2,'0')}</div>`;
+                    }
+                }
+
+                grid.innerHTML += `
+                    <div class="h-20 ${bgClass} rounded-xl p-1 relative flex flex-col justify-between transition hover:scale-105 cursor-pointer shadow-sm overflow-hidden" title="${record ? (appData.leaveRules[record.type]?.name || 'บันทึก') : (annualHoliday ? annualHoliday.name : '')}">
+                        <span class="${textClass} text-sm font-bold ml-1">${d}</span>
+                        ${record ? `<span class="text-[9px] ${textClass} leading-tight truncate px-1 font-medium z-10">${appData.leaveRules[record.type]?.name || 'N/A'}</span>` : ''}
+                        ${timeDisplay}
+                        ${badge}
+                    </div>
+                `;
+            }
+        };        // --- EXPORT ALL EMPLOYEES REPORT (NEW) ---
+        window.exportAllEmployeesReport = function() {
+            const wb = XLSX.utils.book_new();
+            
+            // Get selected month context
+            const dateInput = document.getElementById('admDateSelector').value || getTodayStr();
+            const dateObj = new Date(dateInput);
+            const month = dateObj.getMonth();
+            const year = dateObj.getFullYear();
+            
+            // 1. Summary Sheet
+            const summaryData = appData.employees.map(emp => {
+                const history = appData.history.filter(h => {
+                    const d = new Date(h.date);
+                    return h.empId === emp.id && d.getMonth() === month && d.getFullYear() === year;
+                });
+                
+                const late = history.filter(h => h.type === 6 || h.type === 7).length;
+                const absent = history.filter(h => h.type === 8).length;
+                const leave = history.filter(h => h.type <= 5 && h.status === 'Approved').length;
+                const penalty = history.filter(h => h.status === 'Penalty' && h.type !== 8).length;
+                const totalOT = history.reduce((sum, h) => sum + (parseFloat(h.otHours) || 0), 0);
+
+                return {
+                    "รหัส": emp.code,
+                    "ชื่อ-นามสกุล": emp.name,
+                    "ตำแหน่ง": emp.position || "-",
+                    "สังกัด": emp.location,
+                    "คะแนนคงเหลือ": emp.score,
+                    "มาสาย (ครั้ง)": late,
+                    "ขาดงาน (ครั้ง)": absent,
+                    "ลา (วัน)": leave,
+                    "โทษวินัย (ครั้ง)": penalty,
+                    "รวม OT (ชม.)": totalOT
+                };
+            });
+
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปภาพรวมเดือนนี้");
+
+            // 2. Individual Sheets
+            appData.employees.forEach(emp => {
+                const history = appData.history.filter(h => {
+                    const d = new Date(h.date);
+                    return h.empId === emp.id && d.getMonth() === month && d.getFullYear() === year;
+                }).sort((a,b) => new Date(a.date) - new Date(b.date));
+                
+                const sheetData = history.map(h => ({
+                    "วันที่": h.date,
+                    "รายการ": appData.leaveRules[h.type]?.name || "พิเศษ",
+                    "รายละเอียด": h.reason,
+                    "สถานะ": h.status,
+                    "หักคะแนน": h.deduction,
+                    "OT (ชม.)": h.otHours || 0
+                }));
+
+                if (sheetData.length === 0) {
+                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติในเดือนนี้" });
+                } else {
+                    // Add Summary Row at the bottom
+                    const totalOT = history.reduce((sum, h) => sum + (parseFloat(h.otHours) || 0), 0);
+                    sheetData.push({}); // Empty row
+                    sheetData.push({ "รายการ": ">>> สรุปยอดรวมเดือนนี้ <<<", "OT (ชม.)": totalOT });
+                }
+
+                const wsEmp = XLSX.utils.json_to_sheet(sheetData);
+                let sheetName = emp.name.replace(/[\\/?*\[\]]/g, "").substring(0, 30);
+                if(wb.SheetNames.includes(sheetName)) {
+                    sheetName = (sheetName.substring(0,25) + "_" + emp.id).substring(0,30);
+                }
+
+                XLSX.utils.book_append_sheet(wb, wsEmp, sheetName);
+            });
+
+            XLSX.writeFile(wb, `Monthly_Report_${month+1}_${year}.xlsx`);
+            showToast("Export ไฟล์เรียบร้อยแล้ว");
+        };
+
+        // --- EXPORT YARD REPORT (UPDATED) ---
+        window.exportYardReport = function() {
+            const currentYard = appData.adminSelectedSite;
+            const employees = appData.employees.filter(e => e.location === currentYard);
+            
+            if (employees.length === 0) {
+                showToast("ไม่มีพนักงานใน Yard นี้");
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            // 1. Summary Sheet
+            const summaryData = employees.map(emp => {
+                const history = appData.history.filter(h => h.empId === emp.id);
+                
+                const present = history.filter(h => h.type === 11).length;
+                const late = history.filter(h => h.type === 6 || h.type === 7).length;
+                const absent = history.filter(h => h.type === 8).length;
+                const leave = history.filter(h => h.type <= 5 && h.status === 'Approved').length;
+                const totalOT = history.reduce((sum, h) => sum + (parseFloat(h.otHours) || 0), 0);
+
+                return {
+                    "รหัส": emp.code,
+                    "ชื่อ-นามสกุล": emp.name,
+                    "ตำแหน่ง": emp.position || "-",
+                    "คะแนนคงเหลือ": emp.score,
+                    "มาทำงาน (วัน)": present,
+                    "สาย (ครั้ง)": late,
+                    "ขาดงาน (ครั้ง)": absent,
+                    "ลา (วัน)": leave,
+                    "รวม OT (ชม.)": totalOT
+                };
+            });
+
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, wsSummary, "ภาพรวม Yard");
+
+            // 2. Individual Sheets
+            employees.forEach(emp => {
+                const history = appData.history.filter(h => h.empId === emp.id).sort((a,b) => new Date(b.date) - new Date(a.date));
+                
+                const sheetData = history.map(h => ({
+                    "วันที่": h.date,
+                    "รายการ": appData.leaveRules[h.type]?.name || "พิเศษ",
+                    "รายละเอียด": h.reason,
+                    "OT (ชม.)": h.otHours || 0,
+                    "หักคะแนน": h.deduction,
+                    "สถานะ": h.status
+                }));
+
+                if (sheetData.length === 0) {
+                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติการบันทึก" });
+                }
+
+                const wsEmp = XLSX.utils.json_to_sheet(sheetData);
+                // Sanitize sheet name to avoid excel errors
+                let sheetName = emp.name.replace(/[\\/?*\[\]]/g, "").substring(0, 30);
+                if(wb.SheetNames.includes(sheetName)) {
+                    sheetName = (sheetName.substring(0,25) + "_" + emp.id).substring(0,30);
+                }
+
+                XLSX.utils.book_append_sheet(wb, wsEmp, sheetName);
+            });
+
+            XLSX.writeFile(wb, `Report_${currentYard}_${new Date().toISOString().slice(0,10)}.xlsx`);
+            showToast("ส่งออกไฟล์เรียบร้อย");
+        }
+
+        window.exportEmployeeReport = function() {
+            // Keep this for Manager view (Export All) if needed, or redirect to use same logic
+            const wb = XLSX.utils.book_new();
+            const summary = appData.employees.map(e => ({
+                "รหัส": e.code, "ชื่อ": e.name, "ตำแหน่ง": e.position || "-", "Yard": e.location, "คะแนน": e.score
+            }));
+            const wsSummary = XLSX.utils.json_to_sheet(summary);
+            XLSX.utils.book_append_sheet(wb, wsSummary, "ภาพรวมพนักงาน");
+            XLSX.writeFile(wb, `HR_Full_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+            showToast("ส่งออกไฟล์เรียบร้อย");
+        };
+
+        // ---Point Cancellation & History Logic ---
+        window.openManageHistory = function(empId) {
+            const emp = appData.employees.find(e => e.id == empId);
+            if (!emp) return;
+            tempEmpId = empId;
+            
+            // Add safety checks
+            const elName = document.getElementById('mh-emp-name');
+            const elCode = document.getElementById('mh-emp-code');
+            const elBase = document.getElementById('mh-base-score');
+            const list = document.getElementById('mh-history-list');
+
+            if (elName) elName.innerText = emp.name;
+            if (elCode) elCode.innerText = emp.code;
+            if (elBase) elBase.value = emp.baseScore || 30;
+            
+            if (list) {
+                list.innerHTML = '';
+                const history = appData.history.filter(h => h.empId == empId).sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+                
+                if (history.length === 0) list.innerHTML = '<p class="text-center text-slate-400 py-8 text-sm">ไม่พบประวัติ</p>';
+                
+                history.forEach(h => {
+                    const item = document.createElement('div');
+                    item.className = "bg-white border border-slate-100 p-4 rounded-xl shadow-sm flex justify-between items-center animate-slide-in";
+                    const typeName = appData.leaveRules[h.type]?.name || 'บันทึกพิเศษ';
+                    item.innerHTML = `
+                        <div>
+                            <div class="flex gap-2 items-center"><span class="text-xs font-black text-slate-700">${h.date}</span><span class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${typeName}</span></div>
+                            <p class="text-xs text-slate-400 mt-1">${h.reason}</p>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="text-right"><p class="text-xs font-black text-red-500">-${h.deduction||0}</p><p class="text-[9px] font-bold text-slate-300 uppercase">${h.status}</p></div>
+                            <button onclick="deleteHistoryRecord(${h.id})" class="text-red-300 hover:text-red-500 transition p-2" title="ลบรายการ"><i class="fas fa-times-circle text-lg"></i></button>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            }
+            openModal('manageHistoryModal');
+        };
+
+        window.updateBaseScore = function() {
+            const val = parseInt(document.getElementById('mh-base-score').value);
+            const emp = appData.employees.find(e => e.id == tempEmpId);
+            if (emp) { emp.baseScore = val; saveData(); showToast("อัปเดตคะแนนพื้นฐานสำเร็จ"); updateUI(); }
+        };
+
+        window.deleteHistoryRecord = function(hid) {
+            const pin = prompt("กรุณาใส่รหัส Admin เพื่อยืนยันการลบรายการ:");
+            if (pin === ADMIN_PIN) {
+                if (confirm("ยืนยันการลบรายการนี้? คะแนนจะถูกคืนกลับให้พนักงาน")) {
+                    appData.history = appData.history.filter(h => h.id != hid);
+                    saveData(); 
+                    showToast("ลบรายการเรียบร้อยแล้ว"); 
+                    openManageHistory(tempEmpId); 
+                    updateUI();
+                }
+            } else if (pin !== null) {
+                alert("รหัสผ่านไม่ถูกต้อง! ไม่สามารถลบรายการได้");
+            }
+        };
+
+        // --- NEW: Global Base Score Logic ---
+        window.applyGlobalBaseScore = function() {
+            const val = parseInt(document.getElementById('globalBaseScoreInput').value);
+            if (!val || val < 0) { showToast("กรุณาระบุคะแนนที่ถูกต้อง"); return; }
+            
+            if (confirm(`คุณต้องการกำหนดคะแนนตั้งต้นของพนักงานทุกคนเป็น ${val} คะแนน ใช่หรือไม่?`)) {
+                appData.employees.forEach(emp => {
+                    emp.baseScore = val;
+                });
+                saveData();
+                showToast("ปรับปรุงคะแนนตั้งต้นเรียบร้อย");
+                updateUI();
+                closeModal('manageRulesModal');
+            }
+        };
+
+        // --- NEW: Bulk Transfer Logic ---
+        window.openBulkTransferModal = function(checkboxName) {
+            const checkboxes = document.getElementsByName(checkboxName || 'yardSelect');
+            const selected = Array.from(checkboxes).filter(c => c.checked).map(c => c.value);
+            
+            if (selected.length === 0) {
+                showToast("กรุณาเลือกพนักงานอย่างน้อย 1 คน");
+                return;
+            }
+            
+            document.getElementById('bulkTransferModal').dataset.ids = JSON.stringify(selected);
+            document.getElementById('bulkTransferCount').innerText = selected.length;
+            
+            const select = document.getElementById('bulkTargetYard');
+            select.innerHTML = '';
+            appData.locations.forEach(loc => {
+                const opt = document.createElement('option');
+                const val = typeof loc === 'object' ? loc.name : loc;
+                opt.value = val;
+                opt.text = val;
+                select.appendChild(opt);
+            });
+            
+            openModal('bulkTransferModal');
+        };
+
+        window.confirmBulkTransfer = function() {
+            const ids = JSON.parse(document.getElementById('bulkTransferModal').dataset.ids || "[]");
+            const target = document.getElementById('bulkTargetYard').value;
+            
+            if (!target) return;
+            
+            if(confirm(`ยืนยันการย้ายพนักงาน ${ids.length} คน ไปที่ ${target}?`)) {
+                ids.forEach(id => {
+                    const emp = appData.employees.find(e => e.id == id);
+                    if(emp) emp.location = target;
+                });
+                saveData();
+                closeModal('bulkTransferModal');
+                renderAdminView();
+                renderAdminAllEmployees();
+                showToast(`ย้ายพนักงานไปที่ ${target} เรียบร้อยแล้ว`);
+                
+                const headerChk = document.getElementById('selectAllYardCheck');
+                if(headerChk) headerChk.checked = false;
+            }
+        };
+
+        // --- HANDLERS ---
+        // Helper to save attendance cleanly (Overwrite if exists for that day)
+        function saveAttendanceRecord(empId, date, typeId, deduction, reason, status = 'Present') {
+            // Remove existing records for this emp on this date to ensure overwrite
+            appData.history = appData.history.filter(h => !(h.empId == empId && h.date === date));
+            
+            // Add new record
+            appData.history.push({ 
+                id: Date.now() + Math.random(), 
+                empId: empId, 
+                date: date, 
+                type: typeId, 
+                status: status, 
+                deduction: deduction, 
+                reason: reason, 
+                timestamp: new Date().toISOString() 
+            });
+        }
+
+        window.handlePenaltySubmit = function(e) {
+            e.preventDefault();
+            const empId = Number(document.getElementById('penaltyEmpSelect').value);
+            const typeId = parseInt(document.getElementById('penaltyType').value);
+            const date = document.getElementById('admDateSelector').value || getTodayStr();
+            const rule = appData.leaveRules[typeId];
+            
+            saveAttendanceRecord(empId, date, typeId, rule.deduction, "Admin ลงโทษวินัย", 'Penalty');
+            
+            saveData(); 
+            showToast("บันทึกโทษสำเร็จ");
+            renderAdminView(); 
+        };
+
+        window.handleBulkAttendance = function(typeId) {
+            const boxes = document.getElementsByName('yardSelect');
+            const today = document.getElementById('admDateSelector').value || getTodayStr();
+            const rule = appData.leaveRules[typeId];
+            let updateCount = 0;
+
+            let status = 'Present';
+            if (typeId === 8) status = 'Penalty';
+
+            boxes.forEach(box => {
+                if (box.checked) {
+                    const empId = Number(box.value);
+                    saveAttendanceRecord(empId, today, typeId, rule.deduction, "Admin เช็คชื่อกลุ่ม", status);
+                    updateCount++;
+                }
+            });
+
+            if (updateCount > 0) {
+                saveData(); 
+                showToast(`บันทึกสำเร็จ ${updateCount} รายการ`);
+                renderAdminView();
+                const headerChk = document.getElementById('selectAllYardCheck');
+                if(headerChk) headerChk.checked = false;
+            } else {
+                showToast("กรุณาเลือกพนักงานก่อน");
+            }
+        };
+
+        const getDaysDiff = (start, end) => {
+            const d1 = new Date(start);
+            const d2 = new Date(end);
+            const diffTime = Math.abs(d2 - d1);
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+        };
+
+        window.handleLeaveSubmit = function(e) {
+            e.preventDefault();
+            console.log("Submitting Leave Request..."); // Debug
+            try {
+                const typeId = document.getElementById('leaveType').value;
+                const start = document.getElementById('leaveStartDate').value;
+                const end = document.getElementById('leaveEndDate').value;
+                const reason = document.getElementById('leaveReason').value.trim(); // Get reason and trim whitespace
+
+                if (!typeId) { showToast("กรุณาเลือกประเภทการลา"); return; }
+                if (!start || !end) { showToast("กรุณาระบุวันที่เริ่มต้นและสิ้นสุด"); return; }
+                if (!reason) { showToast("กรุณาระบุเหตุผลการลา"); return; } // Validate reason
+                if (start > end) { showToast("วันที่เริ่มต้นต้องมาก่อนวันที่สิ้นสุด"); return; }
+                
+                // Get Rule
+                const rule = appData.leaveRules[typeId];
+                if (!rule) { showToast("ไม่พบข้อมูลประเภทการลา"); return; }
+
+                // Ensure currentUserId is set (Employee ID)
+                const empId = appData.currentUserId;
+                const emp = appData.employees.find(e => e.id === empId);
+
+                // Critical Check
+                if (!emp) { 
+                    console.error("Employee not found for ID:", empId);
+                    showToast("ไม่พบข้อมูลพนักงานในระบบ (กรุณาล็อกอินใหม่)"); 
+                    return; 
+                }
+
+                // Check Overlap
+                const isOverlap = appData.history.some(h => {
+                    if (h.empId === empId && h.status !== 'Rejected') { // Added Cancelled check if we add that status later
+                        const hStart = h.date;
+                        const hEnd = h.endDate || h.date; 
+                        // Check logic: (StartA <= EndB) and (EndA >= StartB)
+                        return (start <= hEnd && end >= hStart);
+                    }
+                    return false;
+                });
+
+                if (isOverlap) { showToast("⚠️ ไม่สามารถขอลาซ้ำวันที่เดิมได้ (มีรายการอยู่แล้ว)"); return; }
+                
+                // Calculate Days
+                const days = getDaysDiff(start, end);
+                if (isNaN(days) || days <= 0) { showToast("จำนวนวันไม่ถูกต้อง"); return; }
+                
+                // Calculate Deduction
+                let deductionRate = rule.deduction || 0; // Safe default
+
+                if (rule.useTiers) {
+                    const currentYear = new Date().getFullYear();
+                    const empHistory = appData.history.filter(h => {
+                        const d = new Date(h.date);
+                        return h.empId === empId && h.type === parseInt(typeId) && d.getFullYear() === currentYear && h.status !== 'Rejected';
+                    });
+
+                    let usedCount = 0;
+                    if (rule.countType === 'days') {
+                        usedCount = empHistory.reduce((sum, h) => {
+                             const d = getDaysDiff(h.date, h.endDate || h.date);
+                             return sum + d;
+                        }, 0);
+                    } else {
+                        usedCount = empHistory.length;
+                    }
+
+                    // Calculate rate for the NEXT unit (usedCount + 1)
+                    // Logic: Find the first tier where (usedCount + 1) <= limit
+                    let appliedRate = null;
+                    
+                    if (rule.tiers && rule.tiers.length > 0) {
+                        // Sort just in case
+                        const sortedTiers = [...rule.tiers].sort((a,b) => a.limit - b.limit);
+                        const currentTier = sortedTiers.find(t => (usedCount + 1) <= t.limit);
+                        
+                        if (currentTier) {
+                            appliedRate = currentTier.rate;
+                        } else {
+                            // Exceeds all limits
+                            appliedRate = rule.tierDefaultRate !== undefined ? rule.tierDefaultRate : 0;
+                        }
+                    } else if (rule.tierLimit) {
+                         // Backward Compatibility Logic
+                         if (usedCount < rule.tierLimit) {
+                             appliedRate = rule.tierRate1;
+                         } else {
+                             appliedRate = rule.tierRate2;
+                         }
+                    } else {
+                         appliedRate = rule.deduction; // Fallback
+                    }
+                    
+                    deductionRate = appliedRate;
+                }
+
+                let totalDeduction = 0;
+                if (rule.useTiers && rule.deductType === 'per_request') {
+                    totalDeduction = deductionRate;
+                } else {
+                    totalDeduction = days * deductionRate;
+                }
+                
+                // Final safety for NaN
+                if (isNaN(totalDeduction)) totalDeduction = 0;
+
+                // Push Data
+                const newRecord = { 
+                    id: Date.now(), 
+                    empId: empId, 
+                    date: start, 
+                    endDate: end, 
+                    type: parseInt(typeId), 
+                    status: 'Pending', 
+                    deduction: totalDeduction, 
+                    reason: `${reason} (จำนวน ${days} วัน)`, 
+                    timestamp: new Date().toISOString() 
+                };
+                
+                appData.history.push(newRecord);
+                
+                saveData(); 
+                closeModal('leaveModal'); 
+                document.getElementById('leaveForm').reset(); // Reset form
+                showToast(`ส่งคำขอแล้ว (หัก ${totalDeduction} คะแนน)`);
+                
+                updateUI(); // Refresh UI to show history immediately
+
+            } catch(ex) {
+                console.error("Leave Submit Error:", ex);
+                showToast("เกิดข้อผิดพลาด: " + ex.message);
+            }
+        };
+
+        window.handleAddEmployee = function(e) {
+            e.preventDefault();
+            appData.employees.push({ id: Date.now(), name: document.getElementById('newEmpName').value, code: document.getElementById('newEmpCode').value, position: document.getElementById('newEmpPosition').value, baseScore: parseInt(document.getElementById('newEmpBaseScore').value) || 30, location: appData.adminSelectedSite });
+            saveData(); closeModal('addEmpModal'); e.target.reset(); showToast("เพิ่มสำเร็จ");
+        };
+
+        // --- RENDERERS ---
+        window.renderRuleSettings = function() {
+            const body = document.getElementById('rulesTableBody'); body.innerHTML = '';
+            Object.entries(appData.leaveRules).forEach(([id, rule]) => {
+                let deductionText = rule.deduction;
+                let tierText = '-';
+                if (rule.useTiers) {
+                    deductionText = `<span class="text-blue-600 font-bold">แบบขั้นบันได</span>`;
+                    
+                    // Generate summary text
+                    if (rule.tiers && rule.tiers.length > 0) {
+                        const parts = rule.tiers.map(t => `ไม่เกิน ${t.limit} (${t.rate})`);
+                        tierText = parts.join(', ') + `, เกิน (${rule.tierDefaultRate || 0})`;
+                    } else if (rule.tierLimit) {
+                         // Fallback display
+                        tierText = `${rule.tierLimit} แรก (${rule.tierRate1}), เกิน (${rule.tierRate2})`;
+                    }
+                }
+
+                const isChecked = rule.isSelectable !== false ? 'checked' : '';
+                const disabled = rule.isSystem ? 'disabled opacity-50' : '';
+
+                body.innerHTML += `
+                    <tr class="group hover:bg-slate-50 transition">
+                        <td class="text-center py-3 border-b border-slate-50">
+                            <input type="checkbox" ${isChecked} ${disabled} onchange="toggleRuleSelectable(${id}, this.checked)" class="rounded text-green-600 focus:ring-green-500 cursor-pointer">
+                        </td>
+                        <td class="py-3 font-bold border-b border-slate-50">
+                            <div class="flex items-center gap-2">
+                                ${rule.name} 
+                                <button onclick="editRule(${id})" class="bg-blue-50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 w-6 h-6 rounded flex items-center justify-center transition"><i class="fas fa-pen text-[10px]"></i></button>
+                            </div>
+                        </td>
+                        <td class="text-center font-bold text-slate-600 border-b border-slate-50 text-xs">${deductionText}</td>
+                        <td class="text-left py-3 border-b border-slate-50">
+                            <div class="text-[10px] text-slate-400 leading-tight max-w-[200px]">${tierText}</div>
+                        </td>
+                        <td class="text-right py-3 border-b border-slate-50 pr-2">${!rule.isSystem ? `<button onclick="deleteRule(${id})" class="text-slate-300 hover:text-red-500 transition"><i class="fas fa-trash-alt"></i></button>` : '<i class="fas fa-lock text-slate-200"></i>'}</td>
+                    </tr>`;
+            });
+        };
+
+        window.toggleRuleSelectable = function(id, isChecked) {
+            if (appData.leaveRules[id]) {
+                appData.leaveRules[id].isSelectable = isChecked;
+                saveData();
+            }
+        };
+
+        window.toggleTierInputs = function() {
+            const isChecked = document.getElementById('enableTier').checked;
+            const tierSection = document.getElementById('tierInputs');
+            const flatInput = document.getElementById('newRuleDed');
+            
+            if(isChecked) {
+                tierSection.classList.remove('hidden');
+                flatInput.disabled = true;
+                flatInput.classList.add('bg-slate-100', 'text-slate-400');
+                
+                // Initialize with one row if empty
+                const container = document.getElementById('tierRowsContainer');
+                if (container.children.length === 0) {
+                    addTierRow(3, 1); // Default Example
+                }
+                updateTierUnitLabels();
+            } else {
+                tierSection.classList.add('hidden');
+                flatInput.disabled = false;
+                flatInput.classList.remove('bg-slate-100', 'text-slate-400');
+            }
+        };
+
+        // NEW: Dynamic Tier Rows
+        window.addTierRow = function(limit = '', rate = '') {
+            const container = document.getElementById('tierRowsContainer');
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-2 text-xs tier-row animate-slide-in bg-slate-50 p-2 rounded border border-slate-100";
+            div.innerHTML = `
+                <span class="whitespace-nowrap font-bold text-slate-500">ไม่เกิน</span>
+                <input type="number" class="tier-limit w-14 text-center border rounded p-1 font-bold text-slate-700 focus:ring-1 focus:ring-blue-500" placeholder="จำนวน" value="${limit}" required>
+                <span class="unit-label text-slate-500">...</span>
+                <span class="whitespace-nowrap font-bold text-slate-500">หัก</span>
+                <input type="number" step="0.1" class="tier-rate w-14 text-center border rounded p-1 font-bold text-red-500 focus:ring-1 focus:ring-red-500" placeholder="คะแนน" value="${rate}" required>
+                <button type="button" onclick="this.parentElement.remove()" class="ml-auto w-6 h-6 flex items-center justify-center rounded-full text-slate-300 hover:bg-red-100 hover:text-red-500 transition"><i class="fas fa-times"></i></button>
+            `;
+            container.appendChild(div);
+            updateTierUnitLabels();
+        };
+
+        window.updateTierUnitLabels = function() {
+            const type = document.getElementById('tierCountType').value;
+            const label = type === 'times' ? 'ครั้ง' : 'วัน';
+            document.querySelectorAll('.unit-label').forEach(el => el.innerText = label);
+        };
+
+window.addRule = function(e) {
+            e.preventDefault();
+            const id = document.getElementById('manageRulesModal').dataset.editId || Date.now();
+            const isTiered = document.getElementById('enableTier').checked;
+            const isSelectable = document.getElementById('newRuleSelectable').checked;
+            
+            // Collect Tiers (เก็บข้อมูลขั้นบันได)
+            let tiers = [];
+            let defaultRate = 0;
+            if (isTiered) {
+                const rows = document.querySelectorAll('.tier-row');
+                rows.forEach(row => {
+                    const lim = parseFloat(row.querySelector('.tier-limit').value);
+                    const rate = parseFloat(row.querySelector('.tier-rate').value);
+                    if (!isNaN(lim) && !isNaN(rate)) {
+                        tiers.push({ limit: lim, rate: rate });
+                    }
+                });
+                tiers.sort((a, b) => a.limit - b.limit);
+                defaultRate = parseFloat(document.getElementById('tierDefaultRate').value) || 0;
+            }
+
+            // สร้าง Object กฎใหม่
+            const newRule = { 
+                name: document.getElementById('newRuleName').value, 
+                deduction: parseFloat(document.getElementById('newRuleDed').value) || 0, 
+                isSystem: false,
+                isSelectable: isSelectable,
+                // --- [จุดสำคัญ] บันทึกหมวดหมู่ที่เลือก ---
+                category: document.getElementById('newRuleCategory').value, 
+                // ------------------------------------
+                useTiers: isTiered,
+                tiers: tiers,
+                tierDefaultRate: defaultRate,
+                countType: document.getElementById('tierCountType').value,
+                deductType: document.getElementById('tierDeductType').value
+            };
+            
+            appData.leaveRules[id] = newRule;
+            saveData(); 
+            renderRuleSettings(); 
+            
+            // Reset Form (ล้างค่าในฟอร์ม)
+            e.target.reset();
+            document.getElementById('manageRulesModal').dataset.editId = '';
+            document.getElementById('enableTier').checked = false;
+            document.getElementById('newRuleSelectable').checked = true;
+            document.getElementById('newRuleCategory').value = 'leave'; // คืนค่าเริ่มต้นเป็น 'วันลา'
+            document.getElementById('tierRowsContainer').innerHTML = ''; 
+            toggleTierInputs();
+            showToast("บันทึกเกณฑ์เรียบร้อย");
+        };
+
+       window.editRule = function(id) {
+             const rule = appData.leaveRules[id];
+             if(!rule) return;
+             
+             document.getElementById('manageRulesModal').dataset.editId = id;
+             document.getElementById('newRuleName').value = rule.name;
+             document.getElementById('newRuleDed').value = rule.deduction;
+             document.getElementById('newRuleSelectable').checked = rule.isSelectable !== false;
+             
+             // --- [จุดสำคัญ] ดึงหมวดหมู่มาแสดง ---
+             // ถ้ามีค่าเดิมอยู่แล้ว ให้ใช้ค่าเดิม
+             // ถ้าไม่มี (เป็นข้อมูลเก่า) ให้เดาจาก ID: 1-5=ลา, 6-8=โทษ, 11=ไม่นับ
+             let defaultCat = 'none';
+             const numId = parseInt(id);
+             
+             if(rule.category) {
+                 defaultCat = rule.category;
+             } else {
+                 // Logic การเดาสำหรับข้อมูลเก่า
+                 if(numId <= 5) defaultCat = 'leave'; // ลาป่วย, ลากิจ ฯลฯ
+                 else if(numId >= 6 && numId <= 8) defaultCat = 'penalty'; // สาย, ขาด
+             }
+             document.getElementById('newRuleCategory').value = defaultCat;
+             // --------------------------------
+
+             const isTiered = rule.useTiers || false;
+             document.getElementById('enableTier').checked = isTiered;
+             
+             const container = document.getElementById('tierRowsContainer');
+             container.innerHTML = '';
+             
+             if(isTiered) {
+                 document.getElementById('tierCountType').value = rule.countType || 'times';
+                 document.getElementById('tierDeductType').value = rule.deductType || 'per_request';
+                 document.getElementById('tierDefaultRate').value = rule.tierDefaultRate !== undefined ? rule.tierDefaultRate : (rule.tierRate2 || 0);
+
+                 if (rule.tiers && rule.tiers.length > 0) {
+                     rule.tiers.forEach(t => addTierRow(t.limit, t.rate));
+                 } else if (rule.tierLimit) {
+                     addTierRow(rule.tierLimit, rule.tierRate1 || 0);
+                     document.getElementById('tierDefaultRate').value = rule.tierRate2 || 0;
+                 } else {
+                     addTierRow();
+                 }
+             }
+             
+             toggleTierInputs();
+        };
+        window.deleteRule = function(id) {
+            if (confirm("คุณต้องการลบเกณฑ์นี้ใช่หรือไม่?")) {
+                delete appData.leaveRules[id];
+                saveData();
+                renderRuleSettings();
+                showToast("ลบเกณฑ์เรียบร้อยแล้ว");
+            }
+        };
+
+        window.processExcelFile = function() {
+            const file = document.getElementById('excelFileInput').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+                const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                data.forEach(row => {
+                    const name = row['ชื่อ-นามสกุล'] || row['ชื่อ'];
+                    const code = row['รหัสพนักงาน'] || row['รหัส'];
+                    if (name && code) appData.employees.push({ id: Date.now() + Math.random(), name, code, position: row['ตำแหน่ง']||'-', location: appData.adminSelectedSite, baseScore: 30 });
+                });
+                saveData(); closeModal('importExcelModal'); showToast("นำเข้าสำเร็จ");
+            };
+            reader.readAsArrayBuffer(file);
+        };
+// ---------------------------------------------------------
+        // 🟢 3. Logic จัดการเกรดและสี (วางใน <script>)
+        // ---------------------------------------------------------
+
+        // 3.1 ตัวแปลงโค้ดสี (Color Map)
+        // รูปแบบ: [สีเริ่ม (Gradient Start), สีจบ (Gradient End), สีข้อความ (Text Color)]
+        const colorMap = {
+            'gold':   ['from-yellow-400', 'to-yellow-600', 'text-yellow-700 bg-yellow-100'],
+            'green':  ['from-green-600',  'to-emerald-800', 'text-green-700 bg-green-100'],
+            'blue':   ['from-blue-600',   'to-indigo-800',  'text-blue-700 bg-blue-100'],
+            'purple': ['from-purple-600', 'to-violet-800',  'text-purple-700 bg-purple-100'],
+            'orange': ['from-orange-500', 'to-red-600',     'text-orange-700 bg-orange-100'],
+            'red':    ['from-red-600',    'to-rose-800',    'text-red-700 bg-red-100'],
+            'gray':   ['from-slate-500',  'to-slate-700',   'text-slate-600 bg-slate-100'],
+            'black':  ['from-slate-800',  'to-black',       'text-slate-800 bg-slate-200']
+        };
+
+        // 3.2 ฟังก์ชันแสดงตารางรายการเกรด
+        window.renderGradeSettings = function() {
+            const body = document.getElementById('gradesTableBody');
+            if(!body) return;
+            body.innerHTML = '';
+            
+            // ดึงข้อมูลเกรดมาเรียงลำดับ (จากคะแนนมาก -> น้อย)
+            // ถ้ายังไม่มีข้อมูล ให้ใช้ Array ว่าง []
+            const sortedGrades = (appData.grades || []).sort((a,b) => b.min - a.min);
+
+            // ถ้าไม่มีเกรดเลย ให้ขึ้นข้อความแจ้งเตือน
+            if(sortedGrades.length === 0) {
+                body.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-xs text-slate-300">ยังไม่มีการกำหนดเกรด</td></tr>';
+                return;
+            }
+
+            // วนลูปสร้างแถวในตาราง
+            sortedGrades.forEach((g, index) => {
+                // ดึงค่าสีจาก colorMap (ถ้าหาไม่เจอให้ใช้สีเทา)
+                const colorClass = colorMap[g.color] || colorMap['gray'];
+                
+                body.innerHTML += `
+                    <tr class="group hover:bg-slate-50 transition border-b border-slate-50 last:border-none">
+                        <td class="pl-4 py-3">
+                            <span class="font-black text-slate-800 text-sm">${g.name}</span>
+                            <span class="text-[10px] text-slate-400 block truncate max-w-[100px]">${g.text}</span>
+                        </td>
+                        <td class="text-center font-bold text-blue-600 py-3 text-xs">≥ ${g.min}%</td>
+                        <td class="text-center py-3">
+                            <div class="w-6 h-6 rounded-full bg-gradient-to-br ${colorClass[0]} ${colorClass[1]} mx-auto shadow-sm border-2 border-white ring-1 ring-slate-100"></div>
+                        </td>
+                        <td class="text-right pr-4 py-3">
+                            <button onclick="deleteGrade(${index})" class="text-slate-300 hover:text-red-500 transition p-2 rounded-full hover:bg-red-50" title="ลบเกรดนี้">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+            });
+        };
+
+        // 3.3 ฟังก์ชันบันทึกเกรดใหม่ (เมื่อกดปุ่ม "เพิ่มเกรด")
+        window.addGrade = function() {
+            // ดึงค่าจากช่องกรอก
+            const name = document.getElementById('newGradeName').value.trim();
+            const minStr = document.getElementById('newGradeMin').value;
+            const min = parseFloat(minStr);
+            const text = document.getElementById('newGradeText').value.trim();
+            const color = document.getElementById('newGradeColor').value;
+
+            // ตรวจสอบความถูกต้อง (Validation)
+            if(!name) { showToast("กรุณากรอกชื่อเกรด (เช่น A, B, C)"); return; }
+            if(minStr === "" || isNaN(min)) { showToast("กรุณากรอกคะแนนขั้นต่ำ"); return; }
+
+            // ถ้ายังไม่มี array grades ให้สร้างใหม่
+            if(!appData.grades) appData.grades = [];
+            
+            // เพิ่มข้อมูลลงไป
+            appData.grades.push({ 
+                name: name, 
+                min: min, 
+                text: text || name, // ถ้าไม่ได้กรอกคำอธิบาย ให้ใช้ชื่อเกรดแทน
+                color: color 
+            });
+            
+            // ล้างค่าในช่องกรอก (Reset Inputs) ให้พร้อมกรอกอันต่อไป
+            document.getElementById('newGradeName').value = '';
+            document.getElementById('newGradeMin').value = '';
+            document.getElementById('newGradeText').value = '';
+            
+            // บันทึกลง Database และวาดตารางใหม่
+            saveData();
+            renderGradeSettings();
+            showToast(`เพิ่มเกรด ${name} เรียบร้อย`);
+        };
+
+        // 3.4 ฟังก์ชันลบเกรด
+        window.deleteGrade = function(index) {
+            if(confirm("คุณต้องการลบเกรดนี้ใช่หรือไม่?")) {
+                // ต้อง sort ให้ตรงกับตอนแสดงผลก่อนลบ เพื่อให้ index ตรงกัน
+                appData.grades.sort((a,b) => b.min - a.min);
+                
+                // ลบข้อมูลที่ตำแหน่ง index
+                appData.grades.splice(index, 1);
+                
+                saveData();
+                renderGradeSettings();
+                showToast("ลบเกรดเรียบร้อย");
+            }
+        };
+        // ---------------------------------------------------------
+
+        window.renderManagerView = function() {
+            const grid = document.getElementById('mgr-site-grid'); grid.innerHTML = '';
+            appData.locations.forEach(loc => {
+                const emps = appData.employees.filter(e => e.location === (typeof loc === 'object' ? loc.name : loc));
+                const avg = emps.length > 0 ? (emps.reduce((a,b)=>a+b.score,0)/emps.length).toFixed(1) : 0;
+                // Handle object or string
+                const name = typeof loc === 'object' ? loc.name : loc;
+                
+                // Add onclick event to each card
+                grid.innerHTML += `
+                <div onclick="openYardDailyDetail('${name}', '${getTodayStr()}')" class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition cursor-pointer group hover:border-blue-200">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-blue-500 transition">${name}</h4>
+                        <i class="fas fa-chevron-right text-slate-300 text-xs group-hover:text-blue-500 transition"></i>
+                    </div>
+                    <div class="text-3xl font-black text-slate-900 mb-1">${emps.length} <span class="text-xs font-normal text-slate-400">คน</span></div>
+                    <div class="text-[10px] font-bold ${avg>=25?'text-green-600 bg-green-100':(avg>=15?'text-yellow-600 bg-yellow-100':'text-red-600 bg-red-100')} bg-slate-50 inline-block px-2 py-1 rounded-lg">Avg: ${avg}</div>
+                </div>`;
+            });
+
+            // ... (rest of function)
+            const pending = appData.history.filter(h => h.status === 'Pending');
+            document.getElementById('manager-badge').innerText = pending.length;
+            document.getElementById('manager-badge').classList.toggle('hidden', pending.length === 0);
+            document.getElementById('mgr-pending-count').innerText = pending.length;
+            const list = document.getElementById('mgr-request-list');
+            list.innerHTML = ''; 
+            
+            if(pending.length === 0) {
+                list.innerHTML = '<div class="p-12 text-center text-slate-300 text-sm flex flex-col items-center"><i class="fas fa-check-circle text-4xl mb-3 text-slate-200"></i>ไม่มีรายการรออนุมัติ</div>';
+            } else {
+                pending.forEach(h => {
+                    const emp = appData.employees.find(e => e.id == h.empId);
+                    const empName = emp ? emp.name : "Unknown";
+                    const ruleName = appData.leaveRules[h.type]?.name || "Special";
+                    
+                    list.innerHTML += `
+                        <div class="p-4 flex justify-between items-center group hover:bg-slate-50 transition">
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm">${empName}</div>
+                                <div class="text-[10px] text-slate-500">${ruleName} (${new Date(h.date).toLocaleDateString('th-TH')})</div>
+                                <div class="text-[10px] text-slate-400 italic">"${h.reason}"</div>
+                            </div>
+                            <div class="flex gap-2 opacity-100">
+                                 <button onclick="approveRequest(${h.id}, true)" class="w-8 h-8 rounded-full bg-green-100 text-green-600 hover:bg-green-200 flex items-center justify-center transition"><i class="fas fa-check"></i></button>
+                                 <button onclick="approveRequest(${h.id}, false)" class="w-8 h-8 rounded-full bg-red-100 text-red-600 hover:bg-red-200 flex items-center justify-center transition"><i class="fas fa-times"></i></button>
+                            </div>
+                        </div>`;
+                });
+            }
+
+            // Render History List
+            const historyList = document.getElementById('mgr-history-list');
+            historyList.innerHTML = '';
+            const historyItems = [...appData.history].filter(h => h.status !== 'Pending').sort((a,b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 20);
+
+            if (historyItems.length === 0) {
+                 historyList.innerHTML = '<div class="p-8 text-center text-slate-300 text-sm">ไม่มีประวัติล่าสุด</div>';
+            } else {
+                historyItems.forEach(h => {
+                    const emp = appData.employees.find(e => e.id == h.empId);
+                    const empName = emp ? emp.name : `<span class="text-slate-400 italic">ไม่พบข้อมูล (ID:${h.empId})</span>`;
+                    const ruleName = appData.leaveRules[h.type]?.name || "ไม่ระบุ";
+                    let dateDisplay = new Date(h.date).toLocaleDateString('th-TH');
+                    
+                    let statusColor = "text-slate-500 bg-slate-100";
+                    let statusIcon = "fa-circle";
+                    let statusLabel = h.status;
+
+                    if (h.status === 'Approved') {
+                        statusColor = "text-green-600 bg-green-50";
+                        statusIcon = "fa-check-circle";
+                        statusLabel = 'อนุมัติแล้ว';
+                    } else if (h.status === 'Rejected') {
+                        statusColor = "text-red-600 bg-red-50";
+                        statusIcon = "fa-times-circle";
+                        statusLabel = 'ปฏิเสธ';
+                    }
+
+                    historyList.innerHTML += `
+                        <div class="p-4 hover:bg-slate-50 transition flex items-center justify-between group">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">
+                                    ${emp ? empName.charAt(0) : '?'}
+                                </div>
+                                <div>
+                                    <p class="text-sm font-bold text-slate-800">${empName}</p>
+                                    <p class="text-[10px] text-slate-500">${ruleName} <span class="mx-1">•</span> ${dateDisplay}</p>
+                                </div>
+                            </div>
+                            <div class="text-right flex items-center gap-2">
+                                <span class="text-[10px] font-bold px-2 py-1 rounded-full ${statusColor}">
+                                    <i class="fas ${statusIcon} mr-1"></i> ${statusLabel}
+                                </span>
+                                <button onclick="deleteManagerHistoryRecord(${h.id})" class="text-slate-300 hover:text-red-500 transition p-1" title="ลบรายการ">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+
+            const ranking = document.getElementById('mgr-emp-ranking'); ranking.innerHTML = '';
+            // Sort and take top 10
+            const topEmployees = [...appData.employees].sort((a,b) => b.score - a.score).slice(0, 10);
+            
+            if(topEmployees.length === 0) {
+                ranking.innerHTML = '<div class="text-center text-slate-400 py-8 text-sm">ยังไม่มีข้อมูลพนักงาน</div>';
+            }
+
+            topEmployees.forEach((e, i) => {
+                let rankStyle = "bg-white border-slate-100";
+                let rankIcon = `<span class="text-slate-400 font-bold text-sm w-6 text-center">${i+1}</span>`;
+                let scoreColor = "text-blue-600";
+                
+                // Special styling for Top 3
+                if (i === 0) {
+                    rankStyle = "bg-yellow-50 border-yellow-200 shadow-sm";
+                    rankIcon = `<div class="w-8 h-8 rounded-full bg-yellow-400 text-white flex items-center justify-center shadow-lg shadow-yellow-200"><i class="fas fa-crown text-sm"></i></div>`;
+                    scoreColor = "text-yellow-600";
+                } else if (i === 1) {
+                    rankStyle = "bg-slate-50 border-slate-200";
+                    rankIcon = `<div class="w-8 h-8 rounded-full bg-slate-300 text-white flex items-center justify-center shadow"><i class="fas fa-medal text-sm"></i></div>`;
+                    scoreColor = "text-slate-600";
+                } else if (i === 2) {
+                    rankStyle = "bg-orange-50 border-orange-200";
+                    rankIcon = `<div class="w-8 h-8 rounded-full bg-orange-400 text-white flex items-center justify-center shadow"><i class="fas fa-medal text-sm"></i></div>`;
+                    scoreColor = "text-orange-600";
+                }
+
+                ranking.innerHTML += `
+                <div class="flex items-center justify-between p-3 rounded-2xl border ${rankStyle} hover:shadow-md transition cursor-pointer group mb-2" onclick="openManageHistory(${e.id})" title="ดูรายละเอียด">
+                    <div class="flex items-center gap-3">
+                        <div class="flex-shrink-0">
+                            ${rankIcon}
+                        </div>
+                        <div>
+                            <p class="font-bold text-sm text-slate-800 group-hover:text-blue-600 transition">${e.name}</p>
+                            <p class="text-[10px] text-slate-400 flex items-center gap-1">
+                                <i class="fas fa-map-marker-alt text-[9px]"></i> ${e.location}
+                                ${e.position ? `<span class="bg-slate-100 px-1 rounded text-[9px] ml-1">${e.position}</span>` : ''}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-black text-lg ${scoreColor} leading-none">${e.score}</div>
+                        <div class="text-[9px] text-slate-400 font-bold uppercase">คะแนน</div>
+                    </div>
+                </div>`;
+            });
+        }
+        
+        // NEW: Function to delete history record from Manager View
+        window.deleteManagerHistoryRecord = function(hid) {
+            const pin = prompt("กรุณาใส่รหัส Admin เพื่อยืนยันการลบรายการ:");
+            if (pin === ADMIN_PIN) {
+                if (confirm("ยืนยันการลบรายการนี้ออกจากฐานข้อมูล? การกระทำนี้ไม่สามารถย้อนกลับได้")) {
+                    appData.history = appData.history.filter(h => h.id != hid);
+                    saveData();
+                    showToast("ลบรายการเรียบร้อยแล้ว");
+                    updateUI(); // Recalculate scores and refresh all views
+                }
+            } else if (pin !== null) {
+                alert("รหัสผ่านไม่ถูกต้อง!");
+            }
+        };
+
+        // NEW: Manager Yard Detail Logic
+        // Function to open the detail modal
+        window.openYardDailyDetail = function(yardName, date, filter = 'all') {
+            // If date is not provided, use today or the value from the manager date selector
+            const selectedDate = date || document.getElementById('mgrDateSelector').value || getTodayStr();
+            
+            document.getElementById('yardDetailTitle').innerText = yardName;
+            document.getElementById('yardDetailDate').innerText = new Date(selectedDate).toLocaleDateString('th-TH', {dateStyle: 'long'});
+            
+            // Store current context for filtering
+            document.getElementById('yardDailyDetailModal').dataset.yard = yardName;
+            document.getElementById('yardDailyDetailModal').dataset.date = selectedDate;
+            
+            // Render with filter
+            filterYardDetail(filter);
+            
+            openModal('yardDailyDetailModal');
+        };
+
+        // NEW: Wrapper for Admin to open the detail modal
+        window.openAdminYardDetail = function(filter) {
+            const yardName = appData.adminSelectedSite;
+            const date = document.getElementById('admDateSelector').value || getTodayStr();
+            openYardDailyDetail(yardName, date, filter);
+        };
+
+        // Function to filter and render the list inside the modal
+        window.filterYardDetail = function(filter) {
+            const yardName = document.getElementById('yardDailyDetailModal').dataset.yard;
+            const date = document.getElementById('yardDailyDetailModal').dataset.date;
+            
+            // Visual feedback for tabs
+            ['all', 'present', 'late', 'absent'].forEach(f => {
+                const btnElement = document.getElementById(`btn-yd-${f}`);
+                if (btnElement) {
+                    if (f === filter) {
+                        btnElement.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+                        btnElement.classList.remove('text-slate-500', 'hover:bg-white/50');
+                    } else {
+                        btnElement.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+                        btnElement.classList.add('text-slate-500', 'hover:bg-white/50');
+                    }
+                }
+            });
+
+            const tbody = document.getElementById('yardDetailList');
+            tbody.innerHTML = '';
+
+            const employees = appData.employees.filter(e => e.location === yardName);
+            
+            employees.forEach(emp => {
+                const dailyRecord = appData.history.find(h => h.empId == emp.id && h.date === date);
+                
+                let statusType = 'absent'; // Default to absent/unknown if no record
+                let statusText = '<span class="text-slate-300 text-xs">ยังไม่ระบุ</span>';
+                
+                if (dailyRecord) {
+                    const type = parseInt(dailyRecord.type);
+                    if (type === 11) { statusType = 'present'; statusText = '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">มาทำงาน</span>'; }
+                    else if (type === 6 || type === 7) { statusType = 'late'; statusText = '<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-[10px] font-bold">สาย</span>'; }
+                    else { statusType = 'absent'; statusText = `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">${appData.leaveRules[type]?.name || 'ขาด/ลา'}</span>`; }
+                }
+
+                // Filter Logic
+                if (filter === 'all' || filter === statusType) {
+                      // For 'absent' filter, we want both explicit absent records AND those with no records? 
+                      // Or strictly following the buttons? 
+                      // Let's make 'absent' filter show explicit absent/leave records AND null records for completeness if it's a workday.
+                      // But to keep it simple and consistent with admin dashboard logic:
+                      // Present = 11, Late = 6,7, Absent = 8 or Leaves.
+                      
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="p-3">
+                            <div class="font-bold text-slate-800 text-sm">${emp.name}</div>
+                            <div class="text-[10px] text-slate-400">${emp.code}</div>
+                        </td>
+                        <td class="p-3 text-xs text-slate-500">${emp.position || '-'}</td>
+                        <td class="p-3 text-center">${statusText}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+            });
+            
+            if (tbody.innerHTML === '') {
+                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-400 text-sm">ไม่พบข้อมูล</td></tr>';
+            }
+        };
+
+        // --- UTILS ---
+        window.switchRole = (role) => {
+            ['employee', 'admin', 'manager'].forEach(r => document.getElementById(`view-${r}`).classList.add('hidden'));
+            ['employee', 'admin', 'manager'].forEach(r => document.getElementById(`btn-role-${r}`).className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 tab-inactive");
+            document.getElementById(`view-${role}`).classList.remove('hidden');
+            document.getElementById(`btn-role-${role}`).className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 tab-active";
+            updateUI();
+        };
+
+        // UPDATED: Added safety check for null element
+        window.openModal = (id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('hidden');
+            } else {
+                console.warn(`Modal with ID '${id}' not found.`);
+            }
+        };
+        // UPDATED: Added safety check for null element
+        window.closeModal = (id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.add('hidden');
+            }
+        };
+
+        window.showToast = (msg) => { const t = document.getElementById('toast'); document.getElementById('toast-message').innerText = msg; t.classList.remove('translate-y-32'); setTimeout(() => t.classList.add('translate-y-32'), 3000); };
+        
+        // แก้ไขตรงนี้: เปลี่ยนจาก parseInt เป็น Number เพื่อให้รองรับ ID ที่เป็นทศนิยม
+        window.switchCurrentUser = (id) => { 
+            appData.currentUserId = Number(id); 
+            updateUI(); 
+        };
+        
+        window.approveRequest = (hid, ok) => { const h = appData.history.find(x => x.id == hid); if (h) { h.status = ok ? 'Approved' : 'Rejected'; if (!ok) h.deduction = 0; saveData(); showToast(ok ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว"); renderManagerView(); } };
+        
+        window.deleteEmployee = (id) => { 
+            const pin = prompt("กรุณาใส่รหัส Admin เพื่อยืนยันการลบพนักงาน:");
+            if (pin === ADMIN_PIN) {
+                if (confirm("ยืนยันการลบพนักงานคนนี้และประวัติทั้งหมด?")) { 
+                    appData.employees = appData.employees.filter(e => e.id != id); 
+                    appData.history = appData.history.filter(h => h.empId != id); 
+                    saveData(); 
+                    showToast("ลบพนักงานเรียบร้อยแล้ว");
+                    renderAdminView();
+                    renderAdminAllEmployees();
+                }
+            } else if (pin !== null) {
+                alert("รหัสผ่านไม่ถูกต้อง! ไม่สามารถลบพนักงานได้");
+            }
+        };
+
+        window.deleteBulkEmployees = function() {
+            const boxes = document.getElementsByName('allEmpSelect');
+            const ids = [];
+            boxes.forEach(b => { if(b.checked) ids.push(parseInt(b.value)); });
+            
+            if(ids.length === 0) { showToast("กรุณาเลือกพนักงาน"); return; }
+            
+            const pin = prompt(`ยืนยันการลบพนักงาน ${ids.length} คน? กรุณาใส่รหัส Admin:`);
+            if (pin !== ADMIN_PIN) {
+                 if(pin !== null) alert("รหัสผ่านไม่ถูกต้อง");
+                 return;
+            }
+
+            appData.employees = appData.employees.filter(e => !ids.includes(e.id));
+            appData.history = appData.history.filter(h => !ids.includes(h.empId));
+            saveData();
+            renderAdminView();
+            renderAdminAllEmployees();
+            showToast("ลบพนักงานที่เลือกเรียบร้อย");
+        };
+        
+        window.toggleSelectAllYard = (s) => { const b = document.getElementsByName('yardSelect'); b.forEach(x => x.checked = s.checked); };
+        window.updateLeaveInfo = () => { const id = document.getElementById('leaveType').value; const r = appData.leaveRules[id]; if (r) document.getElementById('leaveInfoText').innerText = `${r.note} (หัก ${r.deduction} คะแนน)`; };
+        window.resetSystem = () => { if (prompt("รหัส Admin:") === ADMIN_PIN && confirm("ล้างข้อมูล?")) { appData.employees = []; appData.history = []; saveData(); location.reload(); } };
+
+        init();
+    </script>
+</body>
+</html>
