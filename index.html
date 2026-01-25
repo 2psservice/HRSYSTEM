@@ -169,7 +169,7 @@
                         </div>
                         <div class="grid grid-cols-2 gap-4 border-t border-white/20 pt-4 mt-2">
                             <div class="text-center group-hover:bg-white/5 rounded-xl transition p-2">
-                                <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-file-alt mr-1"></i>ลางาน (ครั้ง)</p>
+                                <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-file-alt mr-1"></i>จำนวนวันที่ลา</p>
                                 <p id="stat-leave-count-card" class="text-3xl font-black text-white drop-shadow-md">0</p>
                             </div>
                             <div class="text-center border-l border-white/20 group-hover:bg-white/5 rounded-xl transition p-2">
@@ -288,9 +288,9 @@
                                 <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                                     <span id="adm-list-title" class="font-black text-slate-700 text-lg">รายชื่อพนักงาน</span>
                                     <div class="flex flex-wrap gap-2">
-                                        <button onclick="handleBulkAttendance(11)" class="bg-green-100 text-green-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-green-200 shadow-sm"><i class="fas fa-check-double mr-1"></i> เหมา มา</button>
-                                        <button onclick="handleBulkAttendance(6)" class="bg-yellow-100 text-yellow-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-yellow-200 shadow-sm"><i class="fas fa-clock mr-1"></i> เหมา สาย</button>
-                                        <button onclick="handleBulkAttendance(8)" class="bg-red-100 text-red-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-red-200 shadow-sm"><i class="fas fa-times-circle mr-1"></i> เหมา ขาด</button>
+                                        <button onclick="handleBulkAttendance(11)" class="bg-green-100 text-green-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-green-200 shadow-sm"><i class="fas fa-check-double mr-1"></i> มาทั้งหมด</button>
+                                        <button onclick="handleBulkAttendance(6)" class="bg-yellow-100 text-yellow-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-yellow-200 shadow-sm"><i class="fas fa-clock mr-1"></i> สายทั้งหมด</button>
+                                        <button onclick="handleBulkAttendance(8)" class="bg-red-100 text-red-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-red-200 shadow-sm"><i class="fas fa-times-circle mr-1"></i> </button>
                                         <button onclick="openBulkTransferModal('yardSelect')" class="bg-orange-100 text-orange-700 text-xs font-bold px-3 py-2 rounded-xl transition hover:bg-orange-200 shadow-sm"><i class="fas fa-exchange-alt mr-1"></i> ย้ายกลุ่ม</button>
                                     </div>
                                 </div>
@@ -1130,12 +1130,19 @@ const headerHtml = `
                 
                 // --- LOGIC UPDATE HERE: แยกประเภทการนับ ---
                 
-                // 1. นับการลา (Leave): Type <= 5 (รวม Pending และ Approved เพื่อให้เห็นยอดทันทีที่ส่ง)
-                const leaveCount = myHistory.filter(h => 
-                    parseInt(h.type) <= 5 && 
-                    (h.status === 'Approved' || h.status === 'Pending') && 
-                    new Date(h.date).getFullYear() === currentYear
-                ).length;
+// 1. นับการลา (Leave): เปลี่ยนจากนับครั้ง (.length) เป็นรวมจำนวนวัน (.reduce)
+const leaveCount = myHistory.filter(h => 
+    parseInt(h.type) <= 5 && 
+    (h.status === 'Approved' || h.status === 'Pending') && 
+    new Date(h.date).getFullYear() === currentYear
+).reduce((sum, h) => {
+    // คำนวณระยะห่างระหว่างวันเริ่ม (date) กับวันสิ้นสุด (endDate)
+    const start = new Date(h.date);
+    const end = new Date(h.endDate || h.date); // ถ้าไม่มีวันสิ้นสุด ให้ใช้วันเริ่ม
+    const diffTime = Math.abs(end - start);
+    const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // แปลงเป็นวัน +1
+    return sum + days;
+}, 0);
 
                 // 2. นับสาย/โทษ (Penalty): นับ Type 6, 7 (สาย), Type 8 (ขาด) หรือสถานะ Penalty
                 // (ตัดตรรกะเดิมที่นับ deduction > 0 ออก เพื่อไม่ให้นับรวมการลาที่โดนหักคะแนน)
@@ -2209,7 +2216,39 @@ const headerHtml = `
                 if (isOverlap) { showToast("⚠️ ไม่สามารถขอลาซ้ำวันที่เดิมได้ (มีรายการอยู่แล้ว)"); return; }
                 
                 // Calculate Days
-                const days = getDaysDiff(start, end);
+// --- เริ่มต้นส่วนที่แก้ไข (นับวันโดยหักวันหยุดประจำสัปดาห์ออก) ---
+        
+        let days = 0;
+        let currentDate = new Date(start);
+        const lastDate = new Date(end);
+
+        // วนลูปตั้งแต่วันเริ่มต้น จนถึงวันสิ้นสุด
+        while (currentDate <= lastDate) {
+            const dayOfWeek = currentDate.getDay(); // 0 = อาทิตย์, 1 = จันทร์, ...
+            
+            // เช็คว่า "ไม่ใช่วันหยุดประจำสัปดาห์" ใช่ไหม? (ถ้าใช่ ให้ข้าม ไม่ต้องนับ)
+            if (!appData.holidays.weekly.includes(dayOfWeek)) {
+                
+                // (เสริม) เช็ควันหยุดนักขัตฤกษ์/ประจำปีด้วย (ถ้าต้องการให้หักออกด้วย)
+                const dateStr = currentDate.toISOString().split('T')[0]; // แปลงเป็น YYYY-MM-DD
+                const isAnnualHoliday = appData.holidays.annual.some(h => h.date === dateStr);
+
+                if (!isAnnualHoliday) {
+                    days++;
+                }
+            }
+            
+            // ขยับไปวันถัดไป
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // ถ้าคำนวณแล้วเหลือ 0 วัน (แปลว่าเลือกวันหยุดล้วนๆ) ให้แจ้งเตือนและหยุดทำงาน
+        if (days === 0) {
+            showToast("วันที่เลือกเป็นวันหยุดทั้งหมด (ไม่จำเป็นต้องลา)"); 
+            return; 
+        }
+
+        // --- สิ้นสุดส่วนที่แก้ไข ---
                 if (isNaN(days) || days <= 0) { showToast("จำนวนวันไม่ถูกต้อง"); return; }
                 
                 // Calculate Deduction
