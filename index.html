@@ -260,9 +260,9 @@
                                     <i class="fas fa-file-export"></i> Export รายงาน
                                 </button>
                                 <button onclick="openManageHolidaysModal()" class="bg-purple-100 text-purple-600 px-4 py-2.5 rounded-xl hover:bg-purple-200 transition shadow-sm font-bold text-sm flex items-center gap-1"><i class="fas fa-calendar-check"></i> วันหยุด</button>
-                                <button onclick="openModal('manageRulesModal'); renderRuleSettings(); renderGradeSettings();" class="bg-slate-200 ...">
-    <i class="fas fa-sliders-h"></i>
-</button>
+                                <button onclick="openModal('manageRulesModal'); renderRuleSettings(); renderGradeSettings();" class="bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition shadow-sm font-bold text-sm flex items-center gap-1">
+                                    <i class="fas fa-sliders-h"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -357,8 +357,9 @@
                                         <th class="p-4 w-10"><input type="checkbox" onchange="toggleSelectAllAll(this)"></th>
                                         <th class="p-4">พนักงาน</th>
                                         <th class="p-4">ตำแหน่ง/สังกัด</th>
-                                        <th class="p-4 text-center">Username</th> <!-- New -->
-                                        <th class="p-4 text-center">Password</th> <!-- New -->
+                                        <th class="p-4 text-center">ชื่อเล่น</th> <!-- New Column -->
+                                        <th class="p-4 text-center">Username</th> 
+                                        <th class="p-4 text-center">Password</th> 
                                         <th class="p-4 text-center">ปฏิทิน</th>
                                         <th class="p-4 text-center">คะแนน</th>
                                         <th class="p-4 text-right">ดูข้อมูล</th>
@@ -523,7 +524,7 @@
             </div>
         </div>
     </div>
-    <!-- Modal: Add Employee -->
+    <!-- Modal: Add Employee (Updated) -->
     <div id="addEmpModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-slide-in">
             <div class="flex justify-between items-center mb-6">
@@ -532,6 +533,9 @@
             </div>
             <form onsubmit="handleAddEmployee(event)" class="space-y-4">
                 <input type="text" id="newEmpName" placeholder="ชื่อ-นามสกุล" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold" required>
+                <!-- Added Nickname Input -->
+                <input type="text" id="newEmpNickname" placeholder="ชื่อเล่น" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold">
+                
                 <input type="text" id="newEmpCode" placeholder="รหัสพนักงาน" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold" required>
                 <input type="text" id="newEmpPosition" placeholder="ตำแหน่ง" class="w-full bg-slate-100 rounded-xl px-4 py-3 font-bold">
                 <div class="space-y-1">
@@ -747,7 +751,49 @@
     <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 transition-all duration-500 translate-y-32 z-[200]">
         <i class="fas fa-info-circle text-blue-400"></i><span id="toast-message" class="text-sm font-bold"></span>
     </div>
+<div id="dateDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-slide-in flex flex-col relative overflow-hidden">
+            <div id="dd-header-bg" class="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-blue-500 to-blue-600"></div>
+            
+            <div class="relative z-10">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="text-white">
+                        <p id="dd-date-display" class="text-sm opacity-90 font-bold">...</p>
+                        <h3 id="dd-status-title" class="text-2xl font-black mt-1">...</h3>
+                    </div>
+                    <button onclick="closeModal('dateDetailModal')" class="bg-white/20 hover:bg-white/40 text-white rounded-full w-8 h-8 flex items-center justify-center transition backdrop-blur-md"><i class="fas fa-times"></i></button>
+                </div>
 
+                <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 text-lg"><i class="far fa-clock"></i></div>
+                        <div>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase">เวลาที่บันทึก</p>
+                            <p id="dd-time-display" class="font-bold text-slate-800 text-lg">-</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 text-lg"><i class="fas fa-bolt"></i></div>
+                        <div>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase">ล่วงเวลา (OT)</p>
+                            <p id="dd-ot-display" class="font-bold text-slate-800 text-lg">-</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100 mt-2">
+                        <p class="text-[10px] text-slate-400 font-bold uppercase mb-1">เหตุผล / หมายเหตุ</p>
+                        <p id="dd-reason-display" class="text-sm text-slate-600 italic">...</p>
+                    </div>
+
+                    <div id="dd-deduction-box" class="flex justify-between items-center bg-red-50 p-3 rounded-xl border border-red-100 hidden">
+                        <span class="text-xs font-bold text-red-700">ถูกหักคะแนน</span>
+                        <span id="dd-deduction-val" class="text-lg font-black text-red-600">-0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -1025,7 +1071,8 @@ grades: [
             if (!emp) return; 
 
             const base = emp.baseScore || 30;
-            document.getElementById('emp-name-display').innerText = emp.name;
+            // Updated name display to include nickname
+            document.getElementById('emp-name-display').innerText = `${emp.name} ${emp.nickname ? '('+emp.nickname+')' : ''}`;
             document.getElementById('emp-pos-display').innerText = emp.position || 'พนักงาน';
             document.getElementById('emp-code-display').innerText = 'รหัส: ' + emp.code;
             document.getElementById('emp-score').innerText = emp.score;
@@ -1428,13 +1475,16 @@ const leaveCount = myHistory.filter(h =>
                     recordId = status.id;
                 }
 
+                // Render Name with Nickname
+                const nameDisplay = `${e.name} <span class="text-slate-500 font-normal text-xs">(${e.nickname || '-'})</span>`;
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="p-4"><input type="checkbox" name="yardSelect" value="${e.id}"></td>
                     <td class="p-4">
                         <div class="flex items-center justify-between gap-4">
                             <div>
-                                <div class="font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition" onclick="openManageHistory(${e.id})" title="คลิกเพื่อดูประวัติ">${e.name}</div>
+                                <div class="font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition" onclick="openManageHistory(${e.id})" title="คลิกเพื่อดูประวัติ">${nameDisplay}</div>
                                 <div class="text-[10px] text-slate-400">${e.code} | ${e.position||'-'}</div>
                             </div>
                             <div class="flex gap-1">
@@ -1515,6 +1565,12 @@ const leaveCount = myHistory.filter(h =>
                         <td class="p-4"><input type="checkbox" name="allEmpSelect" value="${e.id}"></td>
                         <td class="p-4"><div class="font-bold text-slate-800 cursor-pointer hover:text-blue-600" onclick="openManageHistory(${e.id})">${e.name}</div><div class="text-[10px] text-slate-400">${e.code}</div></td>
                         <td class="p-4 text-slate-600"><div class="text-xs">${e.position||'-'}</div><div class="text-[9px] bg-slate-100 inline-block px-1 rounded">${e.location}</div></td>
+                        
+                        <!-- Added Nickname Input -->
+                        <td class="p-4 text-center">
+                            <input type="text" value="${e.nickname || ''}" onchange="updateEmpCredential(${e.id}, 'nickname', this.value)" placeholder="ชื่อเล่น" class="w-20 text-xs border border-slate-200 rounded px-2 py-1 bg-slate-50 focus:bg-white transition text-center text-slate-700 font-bold">
+                        </td>
+
                         <!-- Credential Inputs -->
                         <td class="p-4 text-center">
                             <input type="text" value="${e.username || ''}" onchange="updateEmpCredential(${e.id}, 'username', this.value)" placeholder="Username" class="w-24 text-xs border border-slate-200 rounded px-2 py-1 bg-blue-50/50 focus:bg-white transition text-center text-blue-600 font-bold">
@@ -1619,6 +1675,7 @@ const leaveCount = myHistory.filter(h =>
             });
         };
 
+
         // --- NEW: MANAGE YARDS LOGIC ---
         window.openManageYardsModal = function() {
             renderYardsList();
@@ -1696,6 +1753,7 @@ const leaveCount = myHistory.filter(h =>
                 }
             }
         };
+
 
         // --- CALENDAR LOGIC (UPDATED) ---
         window.openCalendarModal = function(empId) {
@@ -1811,7 +1869,7 @@ const leaveCount = myHistory.filter(h =>
                 }
 
                 grid.innerHTML += `
-                    <div class="h-20 ${bgClass} rounded-xl p-1 relative flex flex-col justify-between transition hover:scale-105 cursor-pointer shadow-sm overflow-hidden" title="${record ? (appData.leaveRules[record.type]?.name || 'บันทึก') : (annualHoliday ? annualHoliday.name : '')}">
+                    <div onclick="openDateDetail('${dateStr}')" class="h-20 ${bgClass} rounded-xl p-1 relative flex flex-col justify-between transition hover:scale-105 cursor-pointer shadow-sm overflow-hidden ring-2 ring-transparent hover:ring-blue-200" title="คลิกดูรายละเอียด">
                         <span class="${textClass} text-sm font-bold ml-1">${d}</span>
                         ${record ? `<span class="text-[9px] ${textClass} leading-tight truncate px-1 font-medium z-10">${appData.leaveRules[record.type]?.name || 'N/A'}</span>` : ''}
                         ${timeDisplay}
@@ -1819,7 +1877,106 @@ const leaveCount = myHistory.filter(h =>
                     </div>
                 `;
             }
-        };        // --- EXPORT ALL EMPLOYEES REPORT (NEW) ---
+        };
+
+        window.openDateDetail = function(dateStr) {
+            // 1. ดึงข้อมูล
+            // หาประวัติของพนักงานคนนี้ ในวันที่เลือก
+            const record = appData.history.find(h => 
+                h.empId == calendarTargetEmpId && 
+                h.date === dateStr && 
+                h.status !== 'Rejected'
+            );
+            
+            // หาข้อมูลวันหยุด
+            const dateObj = new Date(dateStr);
+            const dayOfWeek = dateObj.getDay();
+            const isWeeklyHoliday = appData.holidays.weekly.includes(dayOfWeek);
+            const annualHoliday = appData.holidays.annual.find(h => h.date === dateStr);
+
+            // 2. เตรียมข้อมูลแสดงผล
+            const dateDisplay = dateObj.toLocaleDateString('th-TH', { dateStyle: 'full' });
+            document.getElementById('dd-date-display').innerText = dateDisplay;
+            
+            const elHeader = document.getElementById('dd-header-bg');
+            const elTitle = document.getElementById('dd-status-title');
+            const elTime = document.getElementById('dd-time-display');
+            const elOt = document.getElementById('dd-ot-display');
+            const elReason = document.getElementById('dd-reason-display');
+            const elDedBox = document.getElementById('dd-deduction-box');
+            const elDedVal = document.getElementById('dd-deduction-val');
+
+            // Reset ค่า
+            elDedBox.classList.add('hidden');
+            elTime.innerText = "-";
+            elOt.innerText = "ไม่มี";
+            elReason.innerText = "-";
+
+            // 3. กำหนดสีและข้อความตามสถานะ
+            if (record) {
+                const type = parseInt(record.type);
+                const ruleName = appData.leaveRules[type]?.name || 'บันทึกพิเศษ';
+                elTitle.innerText = ruleName;
+                elReason.innerText = record.reason || "-";
+
+                // จัดการสีพื้นหลัง Header
+                if (type === 11) { // มาทำงาน
+                    elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-green-500 to-green-600";
+                } else if (type === 6 || type === 7) { // สาย
+                    elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-yellow-400 to-yellow-500";
+                } else if (type === 8 || type === 99) { // ขาด/โทษ
+                    elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-red-500 to-red-600";
+                } else { // ลา
+                    elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-blue-500 to-blue-600";
+                }
+
+                // แสดงเวลา
+                if (record.timestamp) {
+                    const t = new Date(record.timestamp);
+                    elTime.innerText = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')} น.`;
+                } else if (record.checkInTime) {
+                    elTime.innerText = record.checkInTime + " น.";
+                }
+
+                // แสดง OT
+                if (record.otHours > 0) {
+                    elOt.innerText = `${record.otHours} ชั่วโมง`;
+                    elOt.className = "font-black text-blue-600 text-lg";
+                } else {
+                    elOt.className = "font-bold text-slate-800 text-lg";
+                }
+
+                // แสดงการหักคะแนน
+                if (record.deduction > 0) {
+                    elDedBox.classList.remove('hidden');
+                    elDedVal.innerText = `-${record.deduction}`;
+                }
+
+            } else if (annualHoliday) {
+                // วันหยุดนักขัตฤกษ์
+                elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-purple-500 to-purple-600";
+                elTitle.innerText = "วันหยุดพิเศษ";
+                elReason.innerText = annualHoliday.name;
+            } else if (isWeeklyHoliday) {
+                // วันหยุดประจำสัปดาห์
+                elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-slate-400 to-slate-500";
+                elTitle.innerText = "วันหยุดประจำสัปดาห์";
+                elReason.innerText = "พักผ่อน";
+            } else {
+                // วันธรรมดาที่ไม่มีบันทึก
+                elHeader.className = "absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-slate-200 to-slate-300";
+                elTitle.innerText = "ไม่มีบันทึก";
+                elTitle.classList.add('text-slate-500'); // ปรับสีตัวหนังสือหน่อยเพราะพื้นหลังอ่อน
+                elReason.innerText = "ยังไม่มีข้อมูลการลงเวลา";
+                
+                // แก้สีตัวหนังสือกลับถ้าเป็นเคสปกติ
+                setTimeout(() => elTitle.classList.remove('text-slate-500'), 200); 
+            }
+
+            openModal('dateDetailModal');
+        };
+
+        // --- EXPORT ALL EMPLOYEES REPORT (NEW) ---
         window.exportAllEmployeesReport = function() {
             const wb = XLSX.utils.book_new();
             
@@ -1845,6 +2002,7 @@ const leaveCount = myHistory.filter(h =>
                 return {
                     "รหัส": emp.code,
                     "ชื่อ-นามสกุล": emp.name,
+                    "ชื่อเล่น": emp.nickname || "-",
                     "ตำแหน่ง": emp.position || "-",
                     "สังกัด": emp.location,
                     "คะแนนคงเหลือ": emp.score,
@@ -1922,6 +2080,7 @@ const leaveCount = myHistory.filter(h =>
                 return {
                     "รหัส": emp.code,
                     "ชื่อ-นามสกุล": emp.name,
+                    "ชื่อเล่น": emp.nickname || "-",
                     "ตำแหน่ง": emp.position || "-",
                     "คะแนนคงเหลือ": emp.score,
                     "มาทำงาน (วัน)": present,
@@ -1970,7 +2129,7 @@ const leaveCount = myHistory.filter(h =>
             // Keep this for Manager view (Export All) if needed, or redirect to use same logic
             const wb = XLSX.utils.book_new();
             const summary = appData.employees.map(e => ({
-                "รหัส": e.code, "ชื่อ": e.name, "ตำแหน่ง": e.position || "-", "Yard": e.location, "คะแนน": e.score
+                "รหัส": e.code, "ชื่อ": e.name, "ชื่อเล่น": e.nickname || "-", "ตำแหน่ง": e.position || "-", "Yard": e.location, "คะแนน": e.score
             }));
             const wsSummary = XLSX.utils.json_to_sheet(summary);
             XLSX.utils.book_append_sheet(wb, wsSummary, "ภาพรวมพนักงาน");
@@ -1990,7 +2149,7 @@ const leaveCount = myHistory.filter(h =>
             const elBase = document.getElementById('mh-base-score');
             const list = document.getElementById('mh-history-list');
 
-            if (elName) elName.innerText = emp.name;
+            if (elName) elName.innerText = `${emp.name} ${emp.nickname ? '('+emp.nickname+')' : ''}`;
             if (elCode) elCode.innerText = emp.code;
             if (elBase) elBase.value = emp.baseScore || 30;
             
@@ -2340,7 +2499,17 @@ const leaveCount = myHistory.filter(h =>
 
         window.handleAddEmployee = function(e) {
             e.preventDefault();
-            appData.employees.push({ id: Date.now(), name: document.getElementById('newEmpName').value, code: document.getElementById('newEmpCode').value, position: document.getElementById('newEmpPosition').value, baseScore: parseInt(document.getElementById('newEmpBaseScore').value) || 30, location: appData.adminSelectedSite });
+            // Updated to include nickname
+            const nickname = document.getElementById('newEmpNickname').value;
+            appData.employees.push({ 
+                id: Date.now(), 
+                name: document.getElementById('newEmpName').value, 
+                nickname: nickname,
+                code: document.getElementById('newEmpCode').value, 
+                position: document.getElementById('newEmpPosition').value, 
+                baseScore: parseInt(document.getElementById('newEmpBaseScore').value) || 30, 
+                location: appData.adminSelectedSite 
+            });
             saveData(); closeModal('addEmpModal'); e.target.reset(); showToast("เพิ่มสำเร็จ");
         };
 
@@ -2558,8 +2727,9 @@ window.addRule = function(e) {
                 const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                 data.forEach(row => {
                     const name = row['ชื่อ-นามสกุล'] || row['ชื่อ'];
+                    const nickname = row['ชื่อเล่น'] || ''; // Read nickname
                     const code = row['รหัสพนักงาน'] || row['รหัส'];
-                    if (name && code) appData.employees.push({ id: Date.now() + Math.random(), name, code, position: row['ตำแหน่ง']||'-', location: appData.adminSelectedSite, baseScore: 30 });
+                    if (name && code) appData.employees.push({ id: Date.now() + Math.random(), name, nickname: nickname, code, position: row['ตำแหน่ง']||'-', location: appData.adminSelectedSite, baseScore: 30 });
                 });
                 saveData(); closeModal('importExcelModal'); showToast("นำเข้าสำเร็จ");
             };
@@ -2706,7 +2876,7 @@ window.addRule = function(e) {
             } else {
                 pending.forEach(h => {
                     const emp = appData.employees.find(e => e.id == h.empId);
-                    const empName = emp ? emp.name : "Unknown";
+                    const empName = emp ? `${emp.name} ${emp.nickname ? '('+emp.nickname+')' : ''}` : "Unknown";
                     const ruleName = appData.leaveRules[h.type]?.name || "Special";
                     
                     list.innerHTML += `
@@ -2734,7 +2904,7 @@ window.addRule = function(e) {
             } else {
                 historyItems.forEach(h => {
                     const emp = appData.employees.find(e => e.id == h.empId);
-                    const empName = emp ? emp.name : `<span class="text-slate-400 italic">ไม่พบข้อมูล (ID:${h.empId})</span>`;
+                    const empName = emp ? `${emp.name} ${emp.nickname ? '('+emp.nickname+')' : ''}` : `<span class="text-slate-400 italic">ไม่พบข้อมูล (ID:${h.empId})</span>`;
                     const ruleName = appData.leaveRules[h.type]?.name || "ไม่ระบุ";
                     let dateDisplay = new Date(h.date).toLocaleDateString('th-TH');
                     
@@ -2756,7 +2926,7 @@ window.addRule = function(e) {
                         <div class="p-4 hover:bg-slate-50 transition flex items-center justify-between group">
                             <div class="flex items-center gap-3">
                                 <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">
-                                    ${emp ? empName.charAt(0) : '?'}
+                                    ${emp ? emp.name.charAt(0) : '?'}
                                 </div>
                                 <div>
                                     <p class="text-sm font-bold text-slate-800">${empName}</p>
