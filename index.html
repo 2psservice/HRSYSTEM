@@ -260,7 +260,8 @@
                             <div class="flex gap-2">
                                 <button onclick="openModal('addEmpModal')" class="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition">เพิ่มพนักงาน</button>
                                 <button onclick="openModal('importExcelModal')" class="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Upload รายชื่อเข้าระบบ</button>
-                                <button onclick="exportYardReport()" class="bg-green-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-600 transition flex items-center gap-1 shadow-lg shadow-green-200">
+                                <!-- Updated: Open Export Modal instead of direct function -->
+                                <button onclick="openExportModal('yard')" class="bg-green-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-600 transition flex items-center gap-1 shadow-lg shadow-green-200">
                                     <i class="fas fa-file-export"></i> Export รายงาน
                                 </button>
                                 <button onclick="openManageHolidaysModal()" class="bg-purple-100 text-purple-600 px-4 py-2.5 rounded-xl hover:bg-purple-200 transition shadow-sm font-bold text-sm flex items-center gap-1"><i class="fas fa-calendar-check"></i> วันหยุด</button>
@@ -340,8 +341,9 @@
                                 <input type="text" id="allEmpSearch" onkeyup="renderAdminAllEmployees()" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." class="w-full bg-slate-100 border-none rounded-xl pl-10 pr-4 py-3 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="exportAllEmployeesReport()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition flex items-center gap-2">
-                                    <i class="fas fa-file-excel"></i> Export Excel (รายเดือน)
+                                <!-- Updated: Open Export Modal -->
+                                <button onclick="openExportModal('all')" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition flex items-center gap-2">
+                                    <i class="fas fa-file-excel"></i> Export Excel
                                 </button>
                                 <button onclick="openBulkTransferModal('allEmpSelect')" class="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-orange-600 transition flex items-center gap-2">
                                     <i class="fas fa-exchange-alt"></i> ย้ายกลุ่มที่เลือก
@@ -763,6 +765,42 @@
             <div id="scoreDetailList" class="overflow-y-auto flex-1 space-y-2 pr-2 custom-scrollbar">
                 <!-- Content injected via JS -->
             </div>
+        </div>
+    </div>
+
+    <!-- NEW Modal: Export Options -->
+    <div id="exportOptionsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-slide-in">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-black text-xl text-slate-800">เลือกช่วงเวลา Export</h3>
+                <button onclick="closeModal('exportOptionsModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <div class="space-y-4 mb-6">
+                <div class="flex gap-4 bg-slate-50 p-1 rounded-xl">
+                    <button onclick="toggleExportMode('monthly')" id="btn-export-monthly" class="flex-1 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-blue-600">รายเดือน</button>
+                    <button onclick="toggleExportMode('yearly')" id="btn-export-yearly" class="flex-1 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-white/50">รายปี</button>
+                </div>
+
+                <div id="export-month-wrapper">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">เดือน</label>
+                    <select id="exportMonthSelect" class="w-full bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none">
+                        <option value="0">มกราคม</option><option value="1">กุมภาพันธ์</option><option value="2">มีนาคม</option>
+                        <option value="3">เมษายน</option><option value="4">พฤษภาคม</option><option value="5">มิถุนายน</option>
+                        <option value="6">กรกฎาคม</option><option value="7">สิงหาคม</option><option value="8">กันยายน</option>
+                        <option value="9">ตุลาคม</option><option value="10">พฤศจิกายน</option><option value="11">ธันวาคม</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1 ml-1">ปี (พ.ศ.)</label>
+                    <input type="number" id="exportYearInput" class="w-full bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none" placeholder="2567">
+                </div>
+            </div>
+
+            <button onclick="confirmExport()" class="w-full bg-green-600 text-white font-black py-3 rounded-xl shadow-lg hover:bg-green-700 transition transform active:scale-95">
+                ดาวน์โหลดรายงาน
+            </button>
         </div>
     </div>
 
@@ -1998,6 +2036,59 @@ const leaveCount = myHistory.filter(h =>
             openModal('dateDetailModal');
         };
 
+        // --- NEW: Export Logic with Date Selection ---
+        let currentExportContext = 'yard'; // 'yard' or 'all'
+        let currentExportMode = 'monthly'; // 'monthly' or 'yearly'
+
+        window.openExportModal = function(context) {
+            currentExportContext = context;
+            const today = new Date();
+            
+            // Set defaults
+            document.getElementById('exportMonthSelect').value = today.getMonth();
+            document.getElementById('exportYearInput').value = today.getFullYear() + 543;
+            
+            // Default to monthly
+            toggleExportMode('monthly');
+            openModal('exportOptionsModal');
+        };
+
+        window.toggleExportMode = function(mode) {
+            currentExportMode = mode;
+            const btnMonthly = document.getElementById('btn-export-monthly');
+            const btnYearly = document.getElementById('btn-export-yearly');
+            const monthWrapper = document.getElementById('export-month-wrapper');
+
+            if (mode === 'monthly') {
+                btnMonthly.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+                btnMonthly.classList.remove('text-slate-500', 'hover:bg-white/50');
+                btnYearly.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                btnYearly.classList.add('text-slate-500', 'hover:bg-white/50');
+                monthWrapper.classList.remove('hidden');
+            } else {
+                btnYearly.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+                btnYearly.classList.remove('text-slate-500', 'hover:bg-white/50');
+                btnMonthly.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                btnMonthly.classList.add('text-slate-500', 'hover:bg-white/50');
+                monthWrapper.classList.add('hidden');
+            }
+        };
+
+        window.confirmExport = function() {
+            const month = parseInt(document.getElementById('exportMonthSelect').value);
+            const yearTH = parseInt(document.getElementById('exportYearInput').value);
+            const yearAD = yearTH - 543; // Convert to AD for comparison
+
+            if (isNaN(yearAD)) { showToast("กรุณาระบุปีให้ถูกต้อง"); return; }
+
+            if (currentExportContext === 'yard') {
+                exportYardReport(currentExportMode, month, yearAD);
+            } else {
+                exportAllEmployeesReport(currentExportMode, month, yearAD);
+            }
+            closeModal('exportOptionsModal');
+        };
+
         // --- NEW: Open Score Details Modal ---
         window.openScoreDetail = function(type) {
             const empId = appData.currentUserId;
@@ -2082,22 +2173,29 @@ const leaveCount = myHistory.filter(h =>
             openModal('scoreDetailModal');
         };
 
-        // --- EXPORT ALL EMPLOYEES REPORT (NEW) ---
-        window.exportAllEmployeesReport = function() {
+        // --- UPDATED: EXPORT ALL EMPLOYEES REPORT ---
+        window.exportAllEmployeesReport = function(mode, selectedMonth, selectedYear) {
             const wb = XLSX.utils.book_new();
             
-            // Get selected month context
-            const dateInput = document.getElementById('admDateSelector').value || getTodayStr();
-            const dateObj = new Date(dateInput);
-            const month = dateObj.getMonth();
-            const year = dateObj.getFullYear();
-            
+            // Logic to filter history
+            const filterHistory = (history) => {
+                return history.filter(h => {
+                    const d = new Date(h.date);
+                    if (mode === 'monthly') {
+                        return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+                    } else {
+                        return d.getFullYear() === selectedYear;
+                    }
+                });
+            };
+
+            const periodText = mode === 'monthly' 
+                ? `เดือน_${selectedMonth+1}_ปี_${selectedYear+543}` 
+                : `ประจำปี_${selectedYear+543}`;
+
             // 1. Summary Sheet
             const summaryData = appData.employees.map(emp => {
-                const history = appData.history.filter(h => {
-                    const d = new Date(h.date);
-                    return h.empId === emp.id && d.getMonth() === month && d.getFullYear() === year;
-                });
+                const history = filterHistory(appData.history.filter(h => h.empId === emp.id));
                 
                 const late = history.filter(h => h.type === 6 || h.type === 7).length;
                 const absent = history.filter(h => h.type === 8).length;
@@ -2121,14 +2219,12 @@ const leaveCount = myHistory.filter(h =>
             });
 
             const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-            XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปภาพรวมเดือนนี้");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปภาพรวม");
 
             // 2. Individual Sheets
             appData.employees.forEach(emp => {
-                const history = appData.history.filter(h => {
-                    const d = new Date(h.date);
-                    return h.empId === emp.id && d.getMonth() === month && d.getFullYear() === year;
-                }).sort((a,b) => new Date(a.date) - new Date(b.date));
+                const history = filterHistory(appData.history.filter(h => h.empId === emp.id))
+                    .sort((a,b) => new Date(a.date) - new Date(b.date));
                 
                 const sheetData = history.map(h => ({
                     "วันที่": h.date,
@@ -2140,12 +2236,12 @@ const leaveCount = myHistory.filter(h =>
                 }));
 
                 if (sheetData.length === 0) {
-                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติในเดือนนี้" });
+                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติในช่วงเวลานี้" });
                 } else {
                     // Add Summary Row at the bottom
                     const totalOT = history.reduce((sum, h) => sum + (parseFloat(h.otHours) || 0), 0);
                     sheetData.push({}); // Empty row
-                    sheetData.push({ "รายการ": ">>> สรุปยอดรวมเดือนนี้ <<<", "OT (ชม.)": totalOT });
+                    sheetData.push({ "รายการ": ">>> สรุปยอดรวม <<<", "OT (ชม.)": totalOT });
                 }
 
                 const wsEmp = XLSX.utils.json_to_sheet(sheetData);
@@ -2157,12 +2253,12 @@ const leaveCount = myHistory.filter(h =>
                 XLSX.utils.book_append_sheet(wb, wsEmp, sheetName);
             });
 
-            XLSX.writeFile(wb, `Monthly_Report_${month+1}_${year}.xlsx`);
+            XLSX.writeFile(wb, `Report_All_${periodText}.xlsx`);
             showToast("Export ไฟล์เรียบร้อยแล้ว");
         };
 
-        // --- EXPORT YARD REPORT (UPDATED) ---
-        window.exportYardReport = function() {
+        // --- UPDATED: EXPORT YARD REPORT ---
+        window.exportYardReport = function(mode, selectedMonth, selectedYear) {
             const currentYard = appData.adminSelectedSite;
             const employees = appData.employees.filter(e => e.location === currentYard);
             
@@ -2173,9 +2269,25 @@ const leaveCount = myHistory.filter(h =>
 
             const wb = XLSX.utils.book_new();
 
+            // Logic to filter history
+            const filterHistory = (history) => {
+                return history.filter(h => {
+                    const d = new Date(h.date);
+                    if (mode === 'monthly') {
+                        return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+                    } else {
+                        return d.getFullYear() === selectedYear;
+                    }
+                });
+            };
+
+            const periodText = mode === 'monthly' 
+                ? `เดือน_${selectedMonth+1}_ปี_${selectedYear+543}` 
+                : `ประจำปี_${selectedYear+543}`;
+
             // 1. Summary Sheet
             const summaryData = employees.map(emp => {
-                const history = appData.history.filter(h => h.empId === emp.id);
+                const history = filterHistory(appData.history.filter(h => h.empId === emp.id));
                 
                 const present = history.filter(h => h.type === 11).length;
                 const late = history.filter(h => h.type === 6 || h.type === 7).length;
@@ -2202,7 +2314,8 @@ const leaveCount = myHistory.filter(h =>
 
             // 2. Individual Sheets
             employees.forEach(emp => {
-                const history = appData.history.filter(h => h.empId === emp.id).sort((a,b) => new Date(b.date) - new Date(a.date));
+                const history = filterHistory(appData.history.filter(h => h.empId === emp.id))
+                    .sort((a,b) => new Date(a.date) - new Date(b.date)); // Sort Oldest -> Newest for report
                 
                 const sheetData = history.map(h => ({
                     "วันที่": h.date,
@@ -2214,7 +2327,11 @@ const leaveCount = myHistory.filter(h =>
                 }));
 
                 if (sheetData.length === 0) {
-                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติการบันทึก" });
+                    sheetData.push({ "หมายเหตุ": "ไม่มีประวัติในช่วงเวลานี้" });
+                } else {
+                    const totalOT = history.reduce((sum, h) => sum + (parseFloat(h.otHours) || 0), 0);
+                    sheetData.push({});
+                    sheetData.push({ "รายการ": ">>> สรุปยอดรวม <<<", "OT (ชม.)": totalOT });
                 }
 
                 const wsEmp = XLSX.utils.json_to_sheet(sheetData);
@@ -2227,7 +2344,7 @@ const leaveCount = myHistory.filter(h =>
                 XLSX.utils.book_append_sheet(wb, wsEmp, sheetName);
             });
 
-            XLSX.writeFile(wb, `Report_${currentYard}_${new Date().toISOString().slice(0,10)}.xlsx`);
+            XLSX.writeFile(wb, `Report_${currentYard}_${periodText}.xlsx`);
             showToast("ส่งออกไฟล์เรียบร้อย");
         }
 
