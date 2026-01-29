@@ -1030,7 +1030,10 @@ grades: [
             select.innerHTML = '';
             appData.employees.forEach(e => {
                 const opt = document.createElement('option');
-                opt.value = e.id; opt.text = e.name; opt.selected = e.id == appData.currentUserId;
+                // Updated: Show Name + Nickname in switcher
+                opt.value = e.id; 
+                opt.text = `${e.name} ${e.nickname ? '('+e.nickname+')' : ''}`;
+                opt.selected = e.id == appData.currentUserId;
                 select.appendChild(opt);
             });
         }
