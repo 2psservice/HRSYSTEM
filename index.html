@@ -168,13 +168,17 @@
                             <div id="emp-score-bar" class="bg-white h-full rounded-full transition-all duration-1000" style="width: 100%"></div>
                         </div>
                         <div class="grid grid-cols-2 gap-4 border-t border-white/20 pt-4 mt-2">
-                            <div class="text-center group-hover:bg-white/5 rounded-xl transition p-2">
+                            <!-- Added onclick event and cursor-pointer -->
+                            <div onclick="openScoreDetail('leave')" class="text-center group-hover:bg-white/5 rounded-xl transition p-2 cursor-pointer hover:bg-white/10 active:scale-95">
                                 <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-file-alt mr-1"></i>จำนวนวันที่ลา</p>
                                 <p id="stat-leave-count-card" class="text-3xl font-black text-white drop-shadow-md">0</p>
+                                <p class="text-[8px] text-white/50">(คลิกดู)</p>
                             </div>
-                            <div class="text-center border-l border-white/20 group-hover:bg-white/5 rounded-xl transition p-2">
+                            <!-- Added onclick event and cursor-pointer -->
+                            <div onclick="openScoreDetail('penalty')" class="text-center border-l border-white/20 group-hover:bg-white/5 rounded-xl transition p-2 cursor-pointer hover:bg-white/10 active:scale-95">
                                 <p class="text-white text-xs font-bold uppercase mb-1 opacity-90"><i class="fas fa-exclamation-triangle mr-1"></i>สาย/ขาด/โทษ</p>
                                 <p id="stat-penalty-count-card" class="text-3xl font-black text-red-300 drop-shadow-md">0</p>
+                                <p class="text-[8px] text-white/50">(คลิกดู)</p>
                             </div>
                         </div>
                     </div>
@@ -255,7 +259,7 @@
                             </div>
                             <div class="flex gap-2">
                                 <button onclick="openModal('addEmpModal')" class="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition">เพิ่มพนักงาน</button>
-                                <button onclick="openModal('importExcelModal')" class="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Excel</button>
+                                <button onclick="openModal('importExcelModal')" class="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Upload รายชื่อเข้าระบบ</button>
                                 <button onclick="exportYardReport()" class="bg-green-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-600 transition flex items-center gap-1 shadow-lg shadow-green-200">
                                     <i class="fas fa-file-export"></i> Export รายงาน
                                 </button>
@@ -744,6 +748,21 @@
                 
                 <button type="submit" class="w-full bg-blue-600 text-white font-black py-3 rounded-xl shadow-lg hover:bg-blue-700 transition transform active:scale-95">ส่งคำขอ</button>
             </form>
+        </div>
+    </div>
+
+    <!-- NEW Modal: Score Details Popup -->
+    <div id="scoreDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl animate-slide-in flex flex-col max-h-[80vh]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
+                <h3 class="font-black text-xl text-slate-800 flex items-center gap-2" id="scoreDetailTitle">
+                    รายละเอียด
+                </h3>
+                <button onclick="closeModal('scoreDetailModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="scoreDetailList" class="overflow-y-auto flex-1 space-y-2 pr-2 custom-scrollbar">
+                <!-- Content injected via JS -->
+            </div>
         </div>
     </div>
 
@@ -1979,6 +1998,90 @@ const leaveCount = myHistory.filter(h =>
             openModal('dateDetailModal');
         };
 
+        // --- NEW: Open Score Details Modal ---
+        window.openScoreDetail = function(type) {
+            const empId = appData.currentUserId;
+            const currentYear = new Date().getFullYear();
+            let title = "";
+            let records = [];
+            let iconClass = "";
+
+            if (type === 'leave') {
+                title = "ประวัติการลา (ปีนี้)";
+                iconClass = "fa-file-alt text-blue-500";
+                // Filter Leave: Type <= 5, Approved or Pending
+                records = appData.history.filter(h => {
+                    const hYear = new Date(h.date).getFullYear();
+                    return h.empId == empId && parseInt(h.type) <= 5 && (h.status === 'Approved' || h.status === 'Pending') && hYear === currentYear;
+                });
+            } else {
+                title = "ประวัติสาย/ขาด/โทษ (ปีนี้)";
+                iconClass = "fa-exclamation-triangle text-red-500";
+                // Filter Penalty: Type 6,7,8 or Status 'Penalty'
+                records = appData.history.filter(h => {
+                    const hYear = new Date(h.date).getFullYear();
+                    const typeId = parseInt(h.type);
+                    return h.empId == empId && (typeId === 6 || typeId === 7 || typeId === 8 || h.status === 'Penalty') && hYear === currentYear;
+                });
+            }
+
+            // Sort Descending (Newest first)
+            records.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            const listContainer = document.getElementById('scoreDetailList');
+            listContainer.innerHTML = '';
+
+            document.getElementById('scoreDetailTitle').innerHTML = `<i class="fas ${iconClass}"></i> ${title}`;
+
+            if (records.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-8 text-slate-400 flex flex-col items-center">
+                        <i class="far fa-folder-open text-3xl mb-2 opacity-50"></i>
+                        <span class="text-sm">ไม่มีประวัติรายการนี้</span>
+                    </div>`;
+            } else {
+                records.forEach(r => {
+                    const dateObj = new Date(r.date);
+                    const dateStr = dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+                    const ruleName = appData.leaveRules[r.type]?.name || 'พิเศษ';
+                    
+                    // Deduction Badge
+                    let dedBadge = '';
+                    if (r.deduction > 0) {
+                        dedBadge = `<span class="bg-red-100 text-red-600 text-[10px] px-2 py-1 rounded-full font-bold">-${r.deduction} คะแนน</span>`;
+                    } else {
+                        dedBadge = `<span class="bg-green-100 text-green-600 text-[10px] px-2 py-1 rounded-full font-bold">ไม่หัก</span>`;
+                    }
+
+                    // Status Text
+                    let statusText = '';
+                    if (r.status === 'Pending') statusText = '<span class="text-yellow-500 text-[9px] font-bold"><i class="fas fa-clock"></i> รออนุมัติ</span>';
+                    else if (r.status === 'Approved') statusText = '<span class="text-green-500 text-[9px] font-bold"><i class="fas fa-check"></i> อนุมัติ</span>';
+                    else if (r.status === 'Penalty') statusText = '<span class="text-red-500 text-[9px] font-bold"><i class="fas fa-gavel"></i> บทลงโทษ</span>';
+
+                    listContainer.innerHTML += `
+                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl flex flex-col gap-2">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-xs font-bold font-mono">${dateStr}</span>
+                                        <span class="font-bold text-slate-800 text-sm">${ruleName}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 mt-1 pl-1 italic">"${r.reason || '-'}"</div>
+                                </div>
+                                <div class="text-right flex flex-col items-end gap-1">
+                                    ${dedBadge}
+                                    ${statusText}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            openModal('scoreDetailModal');
+        };
+
         // --- EXPORT ALL EMPLOYEES REPORT (NEW) ---
         window.exportAllEmployeesReport = function() {
             const wb = XLSX.utils.book_new();
@@ -2611,7 +2714,128 @@ const leaveCount = myHistory.filter(h =>
             document.querySelectorAll('.unit-label').forEach(el => el.innerText = label);
         };
 
-window.addRule = function(e) {
+        // --- Helper Function: Calculate Chargeable Days (Shared Logic) ---
+        // ฟังก์ชันช่วยคำนวณวันลาที่ต้องหักคะแนน (หักวันหยุดออกแล้ว)
+        function calculateChargeableDays(start, end) {
+            let days = 0;
+            let currentDate = new Date(start);
+            const lastDate = new Date(end);
+
+            while (currentDate <= lastDate) {
+                const dayOfWeek = currentDate.getDay();
+                const dateStr = currentDate.toISOString().split('T')[0];
+                const isAnnualHoliday = appData.holidays.annual.some(h => h.date === dateStr);
+
+                // นับเฉพาะถ้าไม่ใช่วันหยุดประจำสัปดาห์ และ ไม่ใช่วันหยุดนักขัตฤกษ์
+                if (!appData.holidays.weekly.includes(dayOfWeek) && !isAnnualHoliday) {
+                    days++;
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            return days;
+        }
+
+        // --- NEW FUNCTION: Recalculate History ---
+        // ฟังก์ชันคำนวณคะแนนย้อนหลังเมื่อมีการเปลี่ยนกฎ
+        function recalculateHistoryForRule(ruleId) {
+            const rule = appData.leaveRules[ruleId];
+            if (!rule) return;
+
+            let updatedCount = 0;
+
+            // วนลูปพนักงานทุกคน
+            appData.employees.forEach(emp => {
+                // ดึงประวัติของกฎข้อนี้ ของพนักงานคนนี้ เรียงตามวันที่ (เก่า -> ใหม่) เพื่อไล่ลำดับขั้นบันไดถูก
+                const empHistory = appData.history
+                    .filter(h => h.empId == emp.id && h.type == ruleId && h.status !== 'Rejected')
+                    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                // ตัวแปรเก็บยอดสะสม (แยกตามปี)
+                let yearlyUsage = {}; // { 2024: 5, 2025: 2 }
+
+                empHistory.forEach(h => {
+                    const year = new Date(h.date).getFullYear();
+                    if (!yearlyUsage[year]) yearlyUsage[year] = 0;
+
+                    // 1. คำนวณจำนวนวันของรายการนี้ (ใช้ Logic เดียวกับตอนขอลา)
+                    const start = h.date;
+                    const end = h.endDate || h.date;
+                    const days = calculateChargeableDays(start, end);
+
+                    // ถ้าเป็น 0 วัน (ลาตรงวันหยุดล้วนๆ) ให้คะแนนเป็น 0
+                    if (days === 0) {
+                        h.deduction = 0;
+                        return; 
+                    }
+
+                    // 2. คำนวณคะแนนที่ต้องหักใหม่
+                    let deductionRate = rule.deduction || 0; // ค่าเริ่มต้น (Flat rate)
+
+                    if (rule.useTiers) {
+                        // ยอดสะสมเดิมก่อนรายการนี้
+                        const usedCount = yearlyUsage[year]; 
+                        
+                        // หาเรทราคาจากขั้นบันได
+                        let appliedRate = null;
+                        if (rule.tiers && rule.tiers.length > 0) {
+                            const sortedTiers = [...rule.tiers].sort((a,b) => a.limit - b.limit);
+                            // หา Tier แรกที่ยอดสะสม(รวมครั้งนี้ +1 หรือ +วัน) ยังไม่เกิน Limit
+                            // ใช้ยอดสะสมปัจจุบัน (usedCount + 1 หรือ usedCount + days) ในการเช็ค
+                            const currentCheckUnit = (rule.countType === 'days') ? (usedCount + days) : (usedCount + 1);
+                            
+                            const currentTier = sortedTiers.find(t => currentCheckUnit <= t.limit);
+                            
+                            if (currentTier) {
+                                appliedRate = currentTier.rate;
+                            } else {
+                                appliedRate = rule.tierDefaultRate !== undefined ? rule.tierDefaultRate : 0;
+                            }
+                        } else if (rule.tierLimit) {
+                             // Backward Compatibility Logic
+                             if (usedCount < rule.tierLimit) {
+                                 appliedRate = rule.tierRate1;
+                             } else {
+                                 appliedRate = rule.tierRate2;
+                             }
+                        } else {
+                            // กรณีไม่มี Tiers (เป็นไปได้ยากถ้าติ๊ก useTiers)
+                            appliedRate = rule.deduction;
+                        }
+                        deductionRate = appliedRate;
+                    }
+
+                    // 3. คำนวณผลรวม
+                    let totalDeduction = 0;
+                    if (rule.useTiers && rule.deductType === 'per_request') {
+                        totalDeduction = deductionRate;
+                    } else {
+                        // per_day หรือ Flat rate ปกติ
+                        totalDeduction = days * deductionRate;
+                    }
+
+                    // 4. อัปเดตข้อมูลในประวัติ
+                    if (h.deduction !== totalDeduction) {
+                        h.deduction = totalDeduction;
+                        updatedCount++;
+                    }
+
+                    // 5. บวกยอดสะสมเพื่อใช้กับรายการถัดไปในปีเดียวกัน
+                    if (rule.useTiers) {
+                        if (rule.countType === 'days') {
+                            yearlyUsage[year] += days;
+                        } else {
+                            yearlyUsage[year] += 1;
+                        }
+                    }
+                });
+            });
+
+            if (updatedCount > 0) {
+                console.log(`Updated ${updatedCount} records for rule ${rule.name}`);
+            }
+        }
+
+        window.addRule = function(e) {
             e.preventDefault();
             const id = document.getElementById('manageRulesModal').dataset.editId || Date.now();
             const isTiered = document.getElementById('enableTier').checked;
@@ -2650,8 +2874,17 @@ window.addRule = function(e) {
             };
             
             appData.leaveRules[id] = newRule;
+            
+            // --- TRIGGER RECALCULATION ---
+            // คำนวณคะแนนย้อนหลังทันทีที่มีการบันทึกกฎ
+            recalculateHistoryForRule(id);
+            // -----------------------------
+
             saveData(); 
             renderRuleSettings(); 
+            
+            // Refresh UI หน้าหลักด้วยเพราะคะแนนเปลี่ยน
+            updateUI();
             
             // Reset Form (ล้างค่าในฟอร์ม)
             e.target.reset();
@@ -2661,7 +2894,8 @@ window.addRule = function(e) {
             document.getElementById('newRuleCategory').value = 'leave'; // คืนค่าเริ่มต้นเป็น 'วันลา'
             document.getElementById('tierRowsContainer').innerHTML = ''; 
             toggleTierInputs();
-            showToast("บันทึกเกณฑ์เรียบร้อย");
+            
+            showToast("บันทึกเกณฑ์และปรับปรุงคะแนนย้อนหลังเรียบร้อย");
         };
 
        window.editRule = function(id) {
@@ -2724,17 +2958,83 @@ window.addRule = function(e) {
         window.processExcelFile = function() {
             const file = document.getElementById('excelFileInput').files[0];
             if (!file) return;
+            
             const reader = new FileReader();
             reader.onload = (e) => {
-                const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-                const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                data.forEach(row => {
-                    const name = row['ชื่อ-นามสกุล'] || row['ชื่อ'];
-                    const nickname = row['ชื่อเล่น'] || ''; // Read nickname
-                    const code = row['รหัสพนักงาน'] || row['รหัส'];
-                    if (name && code) appData.employees.push({ id: Date.now() + Math.random(), name, nickname: nickname, code, position: row['ตำแหน่ง']||'-', location: appData.adminSelectedSite, baseScore: 30 });
-                });
-                saveData(); closeModal('importExcelModal'); showToast("นำเข้าสำเร็จ");
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // Convert to JSON
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    let addedCount = 0;
+
+                    jsonData.forEach(row => {
+                        // Function to fuzzy match keys (trim spaces to match column headers correctly)
+                        const getVal = (targetKeys) => {
+                            const key = Object.keys(row).find(k => targetKeys.includes(k.trim()));
+                            return key ? String(row[key]).trim() : "";
+                        };
+
+                        // 1. Essential Data (Skip if missing)
+                        // อ่านคอลัมน์ "ชื่อ-นามสกุล"
+                        const name = getVal(['ชื่อ-นามสกุล', 'ชื่อ', 'Name']);
+                        // อ่านคอลัมน์ "รหัสพนักงาน"
+                        const code = getVal(['รหัสพนักงาน', 'รหัส', 'EmpID', 'ID']);
+
+                        // ถ้าไม่มีชื่อหรือรหัส ให้ข้ามแถวนั้นไปเลย
+                        if (!name || !code) return; 
+
+                        // 2. Optional Data (Allow empty)
+                        // อ่านคอลัมน์ "ชื่อเล่น"
+                        const nickname = getVal(['ชื่อเล่น', 'Nickname']);
+                        // อ่านคอลัมน์ "ตำแหน่ง"
+                        const position = getVal(['ตำแหน่ง', 'Position']);
+                        // อ่านคอลัมน์ "สาย" (Line/Yard)
+                        const line = getVal(['สาย', 'Line', 'Section', 'Department']); 
+                        
+                        // 3. Logic for Location/Yard
+                        // ถ้า Excel ระบุ "สาย" มาให้ใช้ค่านั้น, ถ้าไม่ระบุให้ใช้ Yard ที่แอดมินเลือกอยู่ปัจจุบัน
+                        const finalLocation = line !== "" ? line : appData.adminSelectedSite;
+
+                        // 4. Duplicate Check (by Code) - ป้องกันรหัสซ้ำ
+                        const exists = appData.employees.some(e => e.code === code);
+                        
+                        if (!exists) {
+                            appData.employees.push({
+                                id: Date.now() + Math.random(),
+                                name: name,
+                                nickname: nickname,
+                                code: code,
+                                position: position || '-',
+                                location: finalLocation,
+                                baseScore: 30, // คะแนนเริ่มต้นมาตรฐาน
+                                username: code, // Default user = รหัสพนักงาน
+                                password: code  // Default pass = รหัสพนักงาน
+                            });
+                            addedCount++;
+                        }
+                    });
+
+                    saveData();
+                    closeModal('importExcelModal');
+                    document.getElementById('excelFileInput').value = ''; // Reset input
+                    
+                    if (addedCount > 0) {
+                        showToast(`นำเข้าพนักงานสำเร็จ ${addedCount} คน`);
+                        // Refresh UI
+                        renderAdminView();
+                        renderAdminAllEmployees();
+                    } else {
+                        showToast("ไม่พบข้อมูลใหม่ หรือรหัสพนักงานซ้ำกับที่มีอยู่");
+                    }
+
+                } catch (error) {
+                    console.error("Excel Import Error:", error);
+                    showToast("เกิดข้อผิดพลาดในการอ่านไฟล์ Excel");
+                }
             };
             reader.readAsArrayBuffer(file);
         };
@@ -2900,10 +3200,14 @@ window.addRule = function(e) {
             // Render History List
             const historyList = document.getElementById('mgr-history-list');
             historyList.innerHTML = '';
-            const historyItems = [...appData.history].filter(h => h.status !== 'Pending').sort((a,b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 20);
+            // UPDATED: Filter only Approved/Rejected items (Leave Requests)
+            const historyItems = [...appData.history]
+                .filter(h => h.status === 'Approved' || h.status === 'Rejected')
+                .sort((a,b) => b.timestamp.localeCompare(a.timestamp))
+                .slice(0, 20);
 
             if (historyItems.length === 0) {
-                 historyList.innerHTML = '<div class="p-8 text-center text-slate-300 text-sm">ไม่มีประวัติล่าสุด</div>';
+                 historyList.innerHTML = '<div class="p-8 text-center text-slate-300 text-sm">ไม่มีประวัติการอนุมัติล่าสุด</div>';
             } else {
                 historyItems.forEach(h => {
                     const emp = appData.employees.find(e => e.id == h.empId);
