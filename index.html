@@ -893,7 +893,13 @@
             </div>
             <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-6 flex justify-between items-center">
                 <div>
-                    <p id="mh-emp-name" class="font-black text-slate-800 text-lg">...</p>
+                    <!-- Updated: Name with Edit Button -->
+                    <div class="flex items-center gap-2">
+                        <span id="mh-emp-name" class="font-black text-slate-800 text-lg">...</span>
+                        <button onclick="editCurrentEmpName()" class="text-slate-400 hover:text-blue-600 transition bg-white/50 hover:bg-white w-6 h-6 rounded-full flex items-center justify-center shadow-sm" title="แก้ไขชื่อ">
+                            <i class="fas fa-pen text-[10px]"></i>
+                        </button>
+                    </div>
                     <p id="mh-emp-code" class="text-slate-500 font-bold text-sm">...</p>
                 </div>
                 <div class="text-right">
@@ -3197,6 +3203,34 @@
                 });
             }
             openModal('manageHistoryModal');
+        };
+
+        // NEW: Function to edit employee name directly from history modal
+        window.editCurrentEmpName = function() {
+            if (!tempEmpId) return;
+            const emp = appData.employees.find(e => e.id == tempEmpId);
+            if (!emp) return;
+
+            const newName = prompt("แก้ไขชื่อ-นามสกุล:", emp.name);
+            if (newName && newName.trim() !== "") {
+                emp.name = newName.trim();
+                saveData();
+                
+                // Update UI in Modal
+                const elName = document.getElementById('mh-emp-name');
+                if(elName) elName.innerText = `${emp.name} ${emp.nickname ? '(' + emp.nickname + ')' : ''}`;
+                
+                showToast("แก้ไขชื่อเรียบร้อยแล้ว");
+                
+                // Refresh Background Lists
+                if (!document.getElementById('view-admin').classList.contains('hidden')) {
+                    renderAdminView();
+                    renderAdminAllEmployees();
+                }
+                if (!document.getElementById('view-manager').classList.contains('hidden')) {
+                    renderManagerView();
+                }
+            }
         };
 
         window.updateBaseScore = function () {
