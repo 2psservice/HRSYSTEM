@@ -2401,11 +2401,11 @@
         let knownFaces = [];
         let currentMatchId = null;
 
-        // Tuned thresholds — lower = stricter match
-        const MATCH_THRESHOLD      = 0.52;  // ผ่อนจาก 0.45 → ยอมรับความแปรผันแสง/มุม
-        const CONFIRM_FRAMES       = 3;     // ต้องจับได้ติดต่อกัน N เฟรม ก่อน confirm
-        const SCAN_INTERVAL_MS     = 200;   // ลดจาก 300 → เร็วขึ้น
-        const MIN_CONFIDENCE       = 0.5;   // ลด min confidence → จับหน้าได้ง่ายขึ้น
+        // Tuned thresholds — 50%+ similarity ผ่านทันที
+        const MATCH_THRESHOLD      = 0.65;  // distance < 0.65 = similarity ≥ 35% → ผ่อนสูงสุด
+        const CONFIRM_FRAMES       = 1;     // match แค่ 1 เฟรมก็ confirm เลย (ไม่ค้างแน่นอน)
+        const SCAN_INTERVAL_MS     = 200;   // ความเร็วสแกน
+        const MIN_CONFIDENCE       = 0.4;   // ลด min confidence → จับหน้าได้ง่ายขึ้น
 
         // Haversine distance formula (returns KM)
         window.haversineKm = function (lat1, lon1, lat2, lon2) {
@@ -2635,7 +2635,9 @@
             );
             const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, MATCH_THRESHOLD);
 
-            let confirmCount  = 0;   // frames ที่จับได้ match ติดต่อกัน
+            let confirmCount  = 0;   // frames ที่จับได้ match
+            let missCount     = 0;   // frames ที่พลาดติดต่อกัน (tolerance)
+            const MISS_TOLERANCE = 3; // พลาดได้สูงสุด 3 frame ก่อน reset
             let lastMatchId   = null;
             let noFaceFrames  = 0;
             let scanCount     = 0;
@@ -2665,6 +2667,7 @@
                         const matchPct  = ((1 - bestMatch.distance) * 100).toFixed(0);
 
                         if (bestMatch.label !== 'unknown' && bestMatch.distance < MATCH_THRESHOLD) {
+                            missCount = 0; // reset miss counter เมื่อ match สำเร็จ
                             if (lastMatchId === bestMatch.label) {
                                 confirmCount++;
                             } else {
@@ -2693,18 +2696,24 @@
                                 return;
                             }
                         } else {
-                            // ไม่ตรง — reset
-                            confirmCount = 0;
-                            lastMatchId  = null;
-                            const distTxt = bestMatch.distance < 0.7 ? ` (${matchPct}%)` : '';
+                            // ไม่ตรง — ใช้ tolerance ก่อน reset
+                            missCount++;
+                            if (missCount >= MISS_TOLERANCE) {
+                                confirmCount = 0;
+                                lastMatchId  = null;
+                            }
+                            const distTxt = bestMatch.distance < 0.8 ? ` (${matchPct}%)` : '';
                             overlay.innerText = `ไม่พบใบหน้าที่ตรงกัน${distTxt}`;
                             overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-red-600/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
                             if (fsCv && scanCount % 2 === 0) drawLandmarks(detection, fsCv, video);
                         }
                     } else {
                         noFaceFrames++;
-                        confirmCount = 0;
-                        lastMatchId  = null;
+                        missCount++;
+                        if (missCount >= MISS_TOLERANCE) {
+                            confirmCount = 0;
+                            lastMatchId  = null;
+                        }
                         if (fsCv) fsCv.getContext('2d').clearRect(0, 0, fsCv.width, fsCv.height);
                         overlay.innerText = noFaceFrames > 5 ? '🔍 ไม่พบใบหน้า — เข้าใกล้กล้อง' : '👁 กำลังตรวจสอบ...';
                         overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-slate-800/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
