@@ -2080,74 +2080,67 @@
     </div>
     </div>
 
-    <!-- NEW Modal: Face Scan (Check-in/Check-out) -->
+    <!-- Modal: Face Scan (Check-in/Check-out) — Upgraded -->
     <div id="faceScanModal"
         class="fixed inset-0 bg-slate-900/90 backdrop-blur-md hidden z-[140] flex items-center justify-center p-4">
-        <div
-            class="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col relative animate-slide-in">
+        <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col relative animate-slide-in">
+
             <!-- Header -->
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 id="fs-header-title" class="font-black text-lg text-slate-800 flex items-center gap-2">
-                    <i class="fas fa-camera text-blue-600"></i> สแกนหน้าเข้า/ออกงาน
+            <div class="px-5 py-4 flex justify-between items-center bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+                <h3 id="fs-header-title" class="font-black text-base flex items-center gap-2">
+                    <i class="fas fa-camera text-emerald-400"></i> สแกนหน้าเข้า/ออกงาน
                 </h3>
                 <button onclick="closeFaceScanModal()"
-                    class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition">
-                    <i class="fas fa-times text-xl"></i>
+                    class="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition">
+                    <i class="fas fa-times"></i>
                 </button>
             </div>
 
-            <!-- Body -->
-            <div class="p-6 flex flex-col items-center">
-                <!-- Status & GPS -->
-                <div class="w-full text-center mb-4">
-                    <div id="fs-main-status"
-                        class="text-sm font-bold text-slate-500 mb-1 flex justify-center items-center gap-2">
-                        <i class="fas fa-spinner fa-spin text-blue-500"></i> กำลังเตรียมระบบ...
-                    </div>
-                    <div id="fs-gps-status" class="text-xs font-bold text-slate-400 min-h-[16px]"></div>
+            <!-- Status bar -->
+            <div class="px-4 py-2 bg-slate-50 border-b border-slate-100">
+                <div id="fs-main-status" class="text-xs font-bold text-slate-500 flex items-center gap-2">
+                    <i class="fas fa-spinner fa-spin text-blue-500"></i> กำลังเตรียมระบบ...
                 </div>
+                <div id="fs-gps-status" class="text-[10px] text-slate-400 mt-0.5 min-h-[14px]"></div>
+            </div>
 
-                <div id="fs-gps-alert"
-                    class="hidden w-full bg-red-50 border border-red-200 text-red-600 rounded-xl p-3 mb-4 text-xs font-bold text-center">
-                    ⚠️ คุณอยู่นอกพื้นที่ที่กำหนด!<br>กรุณาเข้าใกล้จุดเช็คอิน
-                </div>
+            <!-- GPS alert -->
+            <div id="fs-gps-alert"
+                class="hidden mx-4 mt-3 bg-red-50 border border-red-200 text-red-600 rounded-xl p-3 text-xs font-bold text-center">
+                ⚠️ นอกพื้นที่ที่กำหนด — กรุณาเข้าใกล้จุดเช็คอิน
+            </div>
 
-                <!-- Video Scanner Area -->
-                <div
-                    class="relative w-full aspect-[3/4] max-h-[400px] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border-[3px] border-slate-200">
-                    <!-- Scanner Frame -->
-                    <div class="absolute inset-0 z-10 pointer-events-none p-4 opacity-80" id="fs-scanner-frame">
-                        <div
-                            class="absolute top-4 left-4 w-8 h-8 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg">
-                        </div>
-                        <div
-                            class="absolute top-4 right-4 w-8 h-8 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg">
-                        </div>
-                        <div
-                            class="absolute bottom-4 left-4 w-8 h-8 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg">
-                        </div>
-                        <div
-                            class="absolute bottom-4 right-4 w-8 h-8 border-b-4 border-r-4 border-emerald-400 rounded-br-lg">
-                        </div>
-                        <!-- Scan Line Animation (defined via JS/CSS) -->
-                        <div id="fs-scan-line"
-                            class="hidden absolute left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_rgba(52,211,153,0.8)]">
-                        </div>
-                    </div>
-                    <!-- Overlay Status inside video -->
-                    <div id="fs-overlay-status"
-                        class="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20">
-                        รอโหลด...</div>
+            <!-- Camera view -->
+            <div class="relative bg-slate-900 overflow-hidden" style="aspect-ratio:4/3;">
+                <!-- Corner brackets -->
+                <div class="absolute top-3 left-3 w-7 h-7 border-t-[3px] border-l-[3px] border-emerald-400 rounded-tl-lg z-20 pointer-events-none"></div>
+                <div class="absolute top-3 right-3 w-7 h-7 border-t-[3px] border-r-[3px] border-emerald-400 rounded-tr-lg z-20 pointer-events-none"></div>
+                <div class="absolute bottom-3 left-3 w-7 h-7 border-b-[3px] border-l-[3px] border-emerald-400 rounded-bl-lg z-20 pointer-events-none"></div>
+                <div class="absolute bottom-3 right-3 w-7 h-7 border-b-[3px] border-r-[3px] border-emerald-400 rounded-br-lg z-20 pointer-events-none"></div>
 
-                    <video id="fs-video" autoplay muted playsinline
-                        class="absolute inset-0 w-full h-full object-cover scale-x-[-1] opacity-0 transition-opacity duration-500"></video>
-                    <canvas id="fs-canvas" class="absolute inset-0 w-full h-full scale-x-[-1] z-10 pointer-events-none"></canvas>
-                </div>
+                <!-- Scan line -->
+                <div id="fs-scan-line"
+                    class="hidden absolute left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent z-20"
+                    style="box-shadow:0 0 8px rgba(52,211,153,0.9)"></div>
 
+                <!-- Overlay status pill -->
+                <div id="fs-overlay-status"
+                    class="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[11px] font-bold z-30 border border-white/20 whitespace-nowrap">
+                    รอโหลด...</div>
+
+                <video id="fs-video" autoplay muted playsinline
+                    class="absolute inset-0 w-full h-full object-cover scale-x-[-1] opacity-0 transition-opacity duration-300"></video>
+                <canvas id="fs-canvas"
+                    class="absolute inset-0 w-full h-full scale-x-[-1] z-10 pointer-events-none"></canvas>
+            </div>
+
+            <!-- Start button (shown only when ready) -->
+            <div class="p-4">
                 <button id="fs-btn-start" onclick="startFaceScanProcess()"
-                    class="hidden mt-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black py-4 px-8 rounded-xl w-full shadow-lg shadow-blue-200 transition transform hover:-translate-y-1 active:scale-95 text-lg">
-                    <i class="fas fa-play mr-2"></i>เริ่มสแกนหน้า
+                    class="hidden w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black py-3.5 rounded-xl shadow-lg shadow-emerald-200 transition active:scale-95 flex items-center justify-center gap-2 text-base hover:from-emerald-600 hover:to-teal-600">
+                    <i class="fas fa-play"></i> เริ่มสแกนใบหน้า
                 </button>
+                <p class="text-center text-[10px] text-slate-400 mt-2 hidden" id="fs-tip">มองตรงเข้ากล้อง · ระยะ 30–60 ซม. · แสงเพียงพอ</p>
             </div>
         </div>
     </div>
@@ -2279,10 +2272,12 @@
             </div>
         </div>
     </div>
-    <!-- Modal: Device Mismatch Warning -->
+    <!-- Modal: Device Binding Status (First Bind / Mismatch) -->
     <div id="deviceMismatchModal"
         class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden z-[200] flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-slide-in">
+
+            <!-- Dynamic header — JS swaps classes/content -->
             <div class="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-white text-center">
                 <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-4xl mx-auto mb-3">
                     <i class="fas fa-mobile-alt"></i>
@@ -2290,17 +2285,24 @@
                 <h3 class="font-black text-xl">อุปกรณ์ไม่ตรงกัน</h3>
                 <p class="text-white/80 text-xs mt-1">Device Binding Alert</p>
             </div>
-            <div class="p-6 text-center space-y-3">
+
+            <div class="p-6 space-y-3 text-center">
                 <p class="text-slate-600 text-sm font-bold">บัญชีนี้ถูกผูกกับอุปกรณ์อื่นแล้ว</p>
-                <p class="text-slate-400 text-xs">หากคุณเปลี่ยนเครื่องใหม่ กรุณาติดต่อ Admin เพื่อยกเลิกการผูกอุปกรณ์เดิม</p>
-                <div class="bg-slate-50 rounded-xl p-3 text-left border border-slate-100 mt-3">
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Device ที่ผูกไว้</p>
-                    <p id="dm-bound-device" class="text-xs font-bold text-slate-700 break-all">...</p>
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1 mt-2">Device ปัจจุบัน</p>
-                    <p id="dm-current-device" class="text-xs font-bold text-red-600 break-all">...</p>
+                <p class="text-slate-400 text-xs">กรุณาติดต่อ Admin เพื่อยกเลิกการผูกอุปกรณ์เดิม</p>
+
+                <div class="bg-slate-50 rounded-xl p-4 text-left border border-slate-100 space-y-3">
+                    <div>
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-0.5">Device ที่ผูกไว้</p>
+                        <p id="dm-bound-device" class="text-xs font-bold text-slate-700 break-all font-mono">—</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-0.5">Device ปัจจุบัน</p>
+                        <p id="dm-current-device" class="text-xs font-bold text-red-500 break-all font-mono">—</p>
+                    </div>
                 </div>
+
                 <button onclick="closeModal('deviceMismatchModal')"
-                    class="w-full bg-slate-800 text-white font-black py-3 rounded-xl hover:bg-slate-900 transition mt-2">
+                    class="w-full bg-slate-800 text-white font-black py-3 rounded-xl hover:bg-slate-900 transition">
                     รับทราบ
                 </button>
             </div>
@@ -2392,13 +2394,18 @@
         // ==========================================
         // FACE-API & GPS CONFIGURATIONS
         // ==========================================
-        const FACE_MODELS_URL = "https://jusadudewhohacks.github.io/face-api.js/models"; // You can download these locally later if needed
+        const FACE_MODELS_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
         let isFaceApiLoaded = false;
-        let isFaceMode = false; // Check if user opened face modal
+        let isFaceMode = false;
         let faceScanInterval;
         let knownFaces = [];
         let currentMatchId = null;
-        const MATCH_THRESHOLD = 0.45; // lower is stricter
+
+        // Tuned thresholds — lower = stricter match
+        const MATCH_THRESHOLD      = 0.52;  // ผ่อนจาก 0.45 → ยอมรับความแปรผันแสง/มุม
+        const CONFIRM_FRAMES       = 3;     // ต้องจับได้ติดต่อกัน N เฟรม ก่อน confirm
+        const SCAN_INTERVAL_MS     = 200;   // ลดจาก 300 → เร็วขึ้น
+        const MIN_CONFIDENCE       = 0.5;   // ลด min confidence → จับหน้าได้ง่ายขึ้น
 
         // Haversine distance formula (returns KM)
         window.haversineKm = function (lat1, lon1, lat2, lon2) {
@@ -2413,19 +2420,20 @@
             return R * c;
         };
 
-        // Load models helper
-        window.initFaceSystem = async function () {
+        // Load models — core 3 models first (fast path), expression net after
+        window.initFaceSystem = async function (withExpression = false) {
             if (isFaceApiLoaded) return true;
             try {
-                // Ensure model URI is correct. If the CDN fails, switch to direct github user link or host locally
-                const MODEL_URI = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
-
+                const MODEL_URI = FACE_MODELS_URL;
+                // Core models (needed for recognition)
                 await Promise.all([
                     faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URI),
                     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URI),
                     faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URI),
-                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URI) // Load for Liveness detection
                 ]);
+                if (withExpression) {
+                    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URI);
+                }
                 isFaceApiLoaded = true;
                 return true;
             } catch (error) {
@@ -2468,122 +2476,129 @@
             currentScanType = type;
             isFaceMode = true;
 
-            const headerTitle = document.getElementById('fs-header-title');
-            if (type === 11) {
-                headerTitle.innerHTML = '<i class="fas fa-sign-in-alt text-emerald-600"></i> สแกนหน้าเข้างาน';
-            } else {
-                headerTitle.innerHTML = '<i class="fas fa-sign-out-alt text-rose-600"></i> สแกนหน้าออกงาน';
-            }
+            const headerTitle  = document.getElementById('fs-header-title');
+            const mainStatus   = document.getElementById('fs-main-status');
+            const gpsStatus    = document.getElementById('fs-gps-status');
+            const overlayStatus= document.getElementById('fs-overlay-status');
+            const video        = document.getElementById('fs-video');
+            const fsCv         = document.getElementById('fs-canvas');
+
+            headerTitle.innerHTML = type === 11
+                ? '<i class="fas fa-sign-in-alt text-emerald-600"></i> สแกนหน้าเข้างาน'
+                : '<i class="fas fa-sign-out-alt text-rose-600"></i> สแกนหน้าออกงาน';
 
             document.getElementById('fs-btn-start').classList.add('hidden');
             document.getElementById('fs-gps-alert').classList.add('hidden');
-            document.getElementById('fs-scan-line').classList.remove('active');
 
-            const mainStatus = document.getElementById('fs-main-status');
-            const gpsStatus = document.getElementById('fs-gps-status');
-            const overlayStatus = document.getElementById('fs-overlay-status');
-            const video = document.getElementById('fs-video');
-
-            mainStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> กำลังตรวจสอบ GPS...';
-            overlayStatus.innerText = 'Checking GPS...';
-
-            // 1. Check Location Configs first
             const emp = appData.employees.find(e => e.id === appData.currentUserId);
             if (!emp) {
                 mainStatus.innerHTML = '<span class="text-red-500">ไม่พบข้อมูลพนักงาน</span>';
                 return;
             }
 
-            const locConfig = appData.locations.find(l => (typeof l === 'object' ? l.name : l) === emp.location);
+            mainStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> เตรียมระบบ...';
+            overlayStatus.innerText = 'กำลังเตรียม...';
 
-            if (!navigator.geolocation) {
-                mainStatus.innerHTML = '<span class="text-red-500">เบราว์เซอร์ไม่รองรับ GPS</span>';
+            // ── รัน GPS + Model + Camera พร้อมกัน ──
+            const gpsPromise = new Promise((resolve, reject) => {
+                if (!navigator.geolocation) return resolve({ allowed: true, yard: emp.location || '—', status: 'ไม่รองรับ GPS' });
+                navigator.geolocation.getCurrentPosition(
+                    pos => resolve({ pos, allowed: null }),
+                    ()  => resolve({ allowed: true, yard: emp.location || '—', status: 'ไม่ได้รับอนุญาต GPS (ใช้ไซต์จากโปรไฟล์)' }),
+                    { timeout: 6000, maximumAge: 30000 }
+                );
+            });
+
+            const modelPromise = initFaceSystem(false); // core 3 models only
+
+            const camPromise = navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+            }).catch(() => null);
+
+            mainStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> โหลด GPS · AI Model · กล้อง...';
+
+            // รอทั้ง 3 พร้อมกัน
+            const [gpsResult, modelOk, stream] = await Promise.all([gpsPromise, modelPromise, camPromise]);
+
+            // ── ตรวจ Model ──
+            if (!modelOk) {
+                mainStatus.innerHTML = '<span class="text-red-500">โหลด AI Model ล้มเหลว กรุณาตรวจสอบอินเทอร์เน็ต</span>';
                 return;
             }
 
-            navigator.geolocation.getCurrentPosition(async (pos) => {
+            // ── ตรวจ Camera ──
+            if (!stream) {
+                mainStatus.innerHTML = '<span class="text-red-500">เปิดกล้องไม่ได้ กรุณาอนุญาตการเข้าถึงกล้อง</span>';
+                return;
+            }
+
+            // ── ตรวจ GPS ──
+            let matchedYardName = null;
+            if (gpsResult.allowed !== null) {
+                // GPS failed/skipped
+                matchedYardName = gpsResult.yard;
+                gpsStatus.innerHTML = `<span class="text-amber-500">${gpsResult.status}</span>`;
+            } else {
+                const { pos } = gpsResult;
                 currentScanLat = pos.coords.latitude;
                 currentScanLng = pos.coords.longitude;
-                // 1. Dynamic GPS Checking
-                // Loop through all yards to see where the employee is checking in.
-                let matchedYardName = null;
-                let foundAnyYardWithRadius = false;
-                let allowed = false;
 
-                // First check if they are near ANY specific yard
-                for (let loc of appData.locations) {
+                let allowed = false;
+                let foundAnyRadius = false;
+                for (const loc of appData.locations) {
                     if (loc.gps && loc.gps.radius > 0) {
-                        foundAnyYardWithRadius = true;
+                        foundAnyRadius = true;
                         const dist = haversineKm(currentScanLat, currentScanLng, loc.gps.lat, loc.gps.lng);
                         if (dist <= loc.gps.radius) {
                             matchedYardName = typeof loc === 'object' ? loc.name : loc;
                             allowed = true;
-                            gpsStatus.innerHTML = `<span class="text-emerald-500">พิกัดตรงกับไซต์: ${matchedYardName} (${dist.toFixed(2)} km)</span>`;
+                            gpsStatus.innerHTML = `<span class="text-emerald-500"><i class="fas fa-map-marker-alt mr-1"></i>${matchedYardName} (${(dist * 1000).toFixed(0)} ม.)</span>`;
                             break;
                         }
                     }
                 }
-
                 if (!allowed) {
-                    if (!foundAnyYardWithRadius) {
-                        // No yard has GPS radius configured → allow from anywhere, use employee's assigned yard
-                        allowed = true;
-                        matchedYardName = emp.location || "ไม่ระบุไซต์";
-                        gpsStatus.innerHTML = `<span class="text-emerald-500">ไม่มีการจำกัดพื้นที่ (ไซต์: ${matchedYardName})</span>`;
+                    if (!foundAnyRadius) {
+                        matchedYardName = emp.location || '—';
+                        gpsStatus.innerHTML = `<span class="text-emerald-500">ไม่จำกัดพื้นที่ · ไซต์: ${matchedYardName}</span>`;
                     } else {
-                        // Strict blocking if they are not within the radius of any defined Yard
-                        mainStatus.innerHTML = '<span class="text-red-500">⛔ ไม่อยู่ในบริเวณไซต์งานใดๆ</span>';
-                        gpsStatus.innerHTML = `<span class="text-red-400">พิกัดไม่อยู่ในพื้นที่ปฎิบัติงาน</span>`;
+                        stream.getTracks().forEach(t => t.stop());
+                        mainStatus.innerHTML = '<span class="text-red-500">⛔ นอกพื้นที่ไซต์งาน</span>';
                         document.getElementById('fs-gps-alert').classList.remove('hidden');
                         overlayStatus.innerText = 'Out of Area';
-                        document.getElementById('fs-btn-start').classList.add('hidden'); // Ensure button is hidden
                         return;
                     }
                 }
+            }
 
-                currentScanYard = matchedYardName;
+            currentScanYard = matchedYardName;
 
-                // 2. Load Models
-                mainStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> โหลด AI Model...';
-                const success = await initFaceSystem();
-                if (!success) {
-                    mainStatus.innerHTML = '<span class="text-red-500">โหลดระบบจำหน้าล้มเหลว</span>';
-                    return;
-                }
+            // ── โหลด Face DB ──
+            loadFaceDatabase();
+            if (knownFaces.length === 0) {
+                stream.getTracks().forEach(t => t.stop());
+                mainStatus.innerHTML = '<span class="text-red-500">ยังไม่มีใบหน้าที่ลงทะเบียน กรุณาลงทะเบียนใบหน้าก่อน</span>';
+                return;
+            }
 
-                // 3. Load Faces DB
-                loadFaceDatabase();
-                if (knownFaces.length === 0) {
-                    mainStatus.innerHTML = '<span class="text-red-500">ไม่พบฐานข้อมูลใบหน้า</span>';
-                    return;
-                }
+            // ── เปิดกล้อง ──
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                if (fsCv) { fsCv.width = video.videoWidth; fsCv.height = video.videoHeight; }
+            };
+            try { await video.play(); } catch (e) {}
+            video.style.opacity = 1;
 
-                // 4. Start Camera
-                mainStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> เปิดกล้อง...';
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'user',
-                            width: { ideal: 640 },
-                            height: { ideal: 480 }
-                        }
-                    });
-                    video.srcObject = stream;
-                    try { await video.play(); } catch (e) { }
-                    video.onloadedmetadata = () => {
-                        if (fsCv) { fsCv.width = video.videoWidth; fsCv.height = video.videoHeight; }
-                    };
-                    video.style.opacity = 1;
-                    mainStatus.innerHTML = '<span class="text-emerald-500"><i class="fas fa-check"></i> พร้อมสแกน (ยิ้มให้กล้อง 😄)</span>';
-                    overlayStatus.innerText = 'Please Smile 😊';
-                    document.getElementById('fs-btn-start').classList.remove('hidden');
-                } catch (err) {
-                    mainStatus.innerHTML = '<span class="text-red-500">ไม่สามารถเปิดกล้องได้</span>';
-                }
-
-            }, (err) => {
-                mainStatus.innerHTML = '<span class="text-red-500">กรุณาอนุญาต GPS</span>';
-            });
+            mainStatus.innerHTML = `<span class="text-emerald-500"><i class="fas fa-check-circle mr-1"></i>พร้อมสแกน · ${knownFaces.length} คน · ไซต์: ${matchedYardName}</span>`;
+            overlayStatus.innerText = '👁 มองตรงเข้ากล้อง';
+            // Show start button + tip
+            document.getElementById('fs-btn-start').classList.remove('hidden');
+            const tip = document.getElementById('fs-tip');
+            if (tip) tip.classList.remove('hidden');
+            // Auto-start after short delay so user can see the camera
+            setTimeout(() => {
+                if (isFaceMode) startFaceScanProcess();
+            }, 800);
         };
 
         window.closeFaceScanModal = function () {
@@ -2604,86 +2619,104 @@
 
         window.startFaceScanProcess = function () {
             document.getElementById('fs-btn-start').classList.add('hidden');
-            const video = document.getElementById('fs-video');
+            const video   = document.getElementById('fs-video');
             const overlay = document.getElementById('fs-overlay-status');
-            const scanLine = document.getElementById('fs-scan-line');
-            const fsCv = document.getElementById('fs-canvas');
+            const scanLine= document.getElementById('fs-scan-line');
+            const fsCv    = document.getElementById('fs-canvas');
 
-            let livenessState = 'neutral';
-
-            overlay.innerText = 'กรุณาทำหน้านิ่งๆ 😐';
-            overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-blue-600/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20 shadow-[0_0_10px_rgba(37,99,235,0.8)]';
+            overlay.innerText = '👁 มองตรงเข้ากล้อง';
+            overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-slate-800/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
 
             scanLine.style.display = 'block';
-            scanLine.style.animation = 'scanAnim 2s infinite ease-in-out alternate';
+            scanLine.style.animation = 'scanAnim 1.8s infinite ease-in-out alternate';
 
-            // Ensure labeled descriptors are created
-            const labeledDescriptors = knownFaces.map(kf => new faceapi.LabeledFaceDescriptors(kf.id.toString(), kf.descriptors));
+            const labeledDescriptors = knownFaces.map(
+                kf => new faceapi.LabeledFaceDescriptors(kf.id.toString(), kf.descriptors)
+            );
             const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, MATCH_THRESHOLD);
 
-            // CHANGED: Use recursive setTimeout instead of setInterval to prevent freezing
+            let confirmCount  = 0;   // frames ที่จับได้ match ติดต่อกัน
+            let lastMatchId   = null;
+            let noFaceFrames  = 0;
+            let scanCount     = 0;
+
             async function scanLoop() {
                 if (!isFaceMode) return;
-
-                if (video.paused || video.ended) {
-                    // Mobile safari / slow loading can be paused initially. Keep trying.
-                    faceScanInterval = setTimeout(scanLoop, 300);
+                if (video.paused || video.ended || video.readyState < 2) {
+                    faceScanInterval = setTimeout(scanLoop, SCAN_INTERVAL_MS);
                     return;
                 }
 
+                scanCount++;
                 try {
-                    const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.55 }))
-                        .withFaceLandmarks().withFaceExpressions().withFaceDescriptor();
+                    // ── ตรวจทุก frame: ใช้ TinyFaceDetector (เร็วกว่า SSD) เป็น option ──
+                    // ยังใช้ SSD แต่ลด confidence ลง และไม่ต้องการ expression แล้ว
+                    const detection = await faceapi
+                        .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: MIN_CONFIDENCE }))
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
 
                     if (detection) {
-                        // Draw 128-point landmarks on scan canvas
-                        if (fsCv) drawLandmarks(detection, fsCv, video);
+                        noFaceFrames = 0;
+                        // Draw landmarks (ทุก 2 frame เพื่อลด load)
+                        if (fsCv && scanCount % 2 === 0) drawLandmarks(detection, fsCv, video);
 
                         const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+                        const matchPct  = ((1 - bestMatch.distance) * 100).toFixed(0);
 
                         if (bestMatch.label !== 'unknown' && bestMatch.distance < MATCH_THRESHOLD) {
-
-                            // SEQUENCE LIVENESS CHECK
-                            if (livenessState === 'neutral') {
-                                if (detection.expressions && detection.expressions.neutral > 0.8) {
-                                    livenessState = 'smile';
-                                    overlay.innerText = `เจอใบหน้าแล้ว (กรุณายิ้ม 😄)`;
-                                    overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-yellow-500/90 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20 shadow-[0_0_10px_rgba(234,179,8,0.8)]';
-                                } else {
-                                    overlay.innerText = `กรุณาทำหน้านิ่งๆ ก่อน 😐`;
-                                    overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-blue-500/90 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20 shadow-[0_0_10px_rgba(59,130,246,0.8)]';
-                                }
-                            } else if (livenessState === 'smile') {
-                                if (detection.expressions && detection.expressions.happy > 0.8) {
-                                    scanLine.style.display = 'none';
-                                    showConfirmFaceAttendance(parseInt(bestMatch.label), bestMatch.distance);
-                                    return; // Stop looping on success
-                                } else {
-                                    // If they stop smiling or haven't smiled yet, keep prompting
-                                    overlay.innerText = `กรุณายิ้มกว้างๆ 😄`;
-                                }
+                            if (lastMatchId === bestMatch.label) {
+                                confirmCount++;
+                            } else {
+                                // ใบหน้าใหม่ — reset counter
+                                lastMatchId  = bestMatch.label;
+                                confirmCount = 1;
                             }
 
+                            // แสดง progress bar ตาม confirmCount
+                            const pct = Math.min(100, Math.round((confirmCount / CONFIRM_FRAMES) * 100));
+                            overlay.innerHTML = `
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-user-check text-emerald-400"></i>
+                                    <span>${matchPct}%</span>
+                                    <div class="w-16 bg-white/20 rounded-full h-1.5">
+                                        <div class="bg-emerald-400 h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
+                                    </div>
+                                </div>`;
+                            overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-emerald-700/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
+
+                            if (confirmCount >= CONFIRM_FRAMES) {
+                                // ✅ ยืนยันแล้ว
+                                scanLine.style.display = 'none';
+                                if (fsCv) fsCv.getContext('2d').clearRect(0, 0, fsCv.width, fsCv.height);
+                                showConfirmFaceAttendance(parseInt(bestMatch.label), bestMatch.distance);
+                                return;
+                            }
                         } else {
-                            overlay.innerText = `ไม่ตรงกัน (${bestMatch.distance.toFixed(2)})`;
+                            // ไม่ตรง — reset
+                            confirmCount = 0;
+                            lastMatchId  = null;
+                            const distTxt = bestMatch.distance < 0.7 ? ` (${matchPct}%)` : '';
+                            overlay.innerText = `ไม่พบใบหน้าที่ตรงกัน${distTxt}`;
                             overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-red-600/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
+                            if (fsCv && scanCount % 2 === 0) drawLandmarks(detection, fsCv, video);
                         }
                     } else {
+                        noFaceFrames++;
+                        confirmCount = 0;
+                        lastMatchId  = null;
                         if (fsCv) fsCv.getContext('2d').clearRect(0, 0, fsCv.width, fsCv.height);
-                        overlay.innerText = 'ไม่พบใบหน้า';
+                        overlay.innerText = noFaceFrames > 5 ? '🔍 ไม่พบใบหน้า — เข้าใกล้กล้อง' : '👁 กำลังตรวจสอบ...';
+                        overlay.className = 'absolute top-3 left-1/2 -translate-x-1/2 bg-slate-800/80 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-xs font-bold z-20 border border-white/20';
                     }
-                } catch (error) {
-                    // Log error but continue iterating so UI doesn't freeze helplessly
-                    console.warn("Scan Loop Warning:", error);
+                } catch (err) {
+                    console.warn('Scan loop error:', err.message);
                 }
 
-                // If modal is still open, scan again
-                if (isFaceMode) {
-                    faceScanInterval = setTimeout(scanLoop, 300);
-                }
+                if (isFaceMode) faceScanInterval = setTimeout(scanLoop, SCAN_INTERVAL_MS);
             }
 
-            scanLoop(); // start the loop
+            scanLoop();
         };
 
         window.showConfirmFaceAttendance = function (empId, distance) {
@@ -2972,7 +3005,7 @@
 
             status.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i> โหลด AI Model (128-D Descriptor)...';
 
-            initFaceSystem().then(success => {
+            initFaceSystem(false).then(success => {  // core models only — expression not needed for registration
                 if (!success) {
                     status.innerHTML = '<span class="text-red-500">❌ โหลดระบบไม่สำเร็จ</span>';
                     return;
@@ -3235,7 +3268,7 @@
                         const storedAuth = localStorage.getItem('2ps_auth');
                         if (storedAuth && !session.isLoggedIn) {
                             const authData = JSON.parse(storedAuth);
-                            attemptLogin(authData.username, authData.password, true); // Silent login
+                            attemptLogin(authData.username, authData.password, true); // async — includes device check
                         }
 
                         // If already logged in, just update UI
@@ -3285,36 +3318,49 @@
         }
 
         // --- LOGIN LOGIC ---
-        window.handleLogin = (e) => {
+        window.handleLogin = async (e) => {
             e.preventDefault();
             const u = document.getElementById('loginUsername').value.trim();
             const p = document.getElementById('loginPassword').value.trim();
             const remember = document.getElementById('rememberMe').checked;
 
-            attemptLogin(u, p, false, remember);
+            // Show loading state on button
+            const btn = e.target.querySelector('button[type=submit]');
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังตรวจสอบ...';
+            btn.disabled = true;
+
+            await attemptLogin(u, p, false, remember);
+
+            btn.innerHTML = origHTML;
+            btn.disabled = false;
         };
 
-        function attemptLogin(u, p, isSilent = false, remember = false) {
-            // Admin Check
+        async function attemptLogin(u, p, isSilent = false, remember = false) {
+            // Admin — no device binding
             if (u === 'admin' && p === 'admin') {
                 loginSuccess('admin', null, remember, u, p);
                 return;
             }
 
-            // Staff Check
+            // Staff — no device binding
             if (u === 'staff' && p === appData.staffPassword) {
                 loginSuccess('staff', null, remember, u, p);
                 return;
             }
 
-            // Employee Check
+            // Employee — must pass device binding check FIRST
             const emp = appData.employees.find(e => e.username === u && e.password === p);
             if (emp) {
-                loginSuccess('employee', emp.id, remember, u, p);
+                const allowed = await checkAndBindDevice(emp.id);
+                if (allowed) {
+                    loginSuccess('employee', emp.id, remember, u, p);
+                }
+                // if not allowed → checkAndBindDevice already showed the mismatch modal
                 return;
             }
 
-            if (!isSilent) alert("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+            if (!isSilent) showToast('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error');
         }
 
         function loginSuccess(role, userId, remember, u, p) {
@@ -3363,11 +3409,10 @@
                 const emp = appData.employees.find(e => e.id === userId);
                 userDisplay.innerText = `ผู้ใช้งาน: ${emp ? emp.name : 'พนักงาน'}`;
                 switchRole('employee');
-
-                // Device Binding check (async, non-blocking for UI)
-                checkAndBindDevice(userId);
             }
             updateUI();
+            // Pre-warm face models in background — so first scan opens instantly
+            setTimeout(() => initFaceSystem(false).catch(() => {}), 3000);
         }
 
         window.handleLogout = () => {
@@ -7148,52 +7193,100 @@
             }
         }
 
-        // Called after employee login — check & bind device
+        // Called BEFORE employee enters app — returns true = allow, false = block
         async function checkAndBindDevice(empId) {
             const emp = appData.employees.find(e => e.id === empId);
-            if (!emp) return true; // allow if emp not found
+            if (!emp) return true;
 
-            const currentFingerprint = await getDeviceFingerprint();
+            const currentFP = await getDeviceFingerprint();
+            const empIdx    = appData.employees.findIndex(e => e.id === empId);
+            const db        = emp.deviceBinding;
+            const now       = new Date().toISOString();
+            const ua        = navigator.userAgent.substring(0, 150);
 
-            // No device bound yet → bind now
-            if (!emp.deviceBinding || !emp.deviceBinding.fingerprint) {
-                const empIdx = appData.employees.findIndex(e => e.id === empId);
+            // ── CASE 1: ยังไม่เคยผูก → ผูกอัตโนมัติทันที ──
+            if (!db || !db.fingerprint) {
                 appData.employees[empIdx].deviceBinding = {
-                    fingerprint: currentFingerprint,
-                    boundAt: new Date().toISOString(),
-                    lastSeen: new Date().toISOString(),
-                    userAgent: navigator.userAgent.substring(0, 120)
+                    fingerprint : currentFP,
+                    boundAt     : now,
+                    lastSeen    : now,
+                    userAgent   : ua,
+                    platform    : navigator.platform || '—',
+                    screenSize  : `${screen.width}×${screen.height}`,
+                    mismatchLog : []
                 };
                 await saveData();
-                showToast('ผูกอุปกรณ์นี้กับบัญชีของคุณเรียบร้อยแล้ว', 'success');
+                // Show first-bind success modal
+                showDeviceBindModal('first', currentFP, emp.name);
                 return true;
             }
 
-            // Device matches → update lastSeen
-            if (emp.deviceBinding.fingerprint === currentFingerprint) {
-                const empIdx = appData.employees.findIndex(e => e.id === empId);
-                appData.employees[empIdx].deviceBinding.lastSeen = new Date().toISOString();
-                appData.employees[empIdx].deviceBinding.userAgent = navigator.userAgent.substring(0, 120);
-                saveData();
+            // ── CASE 2: Device ตรงกัน → อัปเดต lastSeen แล้วผ่าน ──
+            if (db.fingerprint === currentFP) {
+                appData.employees[empIdx].deviceBinding.lastSeen  = now;
+                appData.employees[empIdx].deviceBinding.userAgent = ua;
+                saveData(); // fire-and-forget
                 return true;
             }
 
-            // Device mismatch → block and show warning
-            document.getElementById('dm-bound-device').textContent = emp.deviceBinding.fingerprint;
-            document.getElementById('dm-current-device').textContent = currentFingerprint;
-            openModal('deviceMismatchModal');
-
-            // Log mismatch attempt
-            const empIdx = appData.employees.findIndex(e => e.id === empId);
+            // ── CASE 3: Device ไม่ตรง → บล็อก + log + แสดง modal ──
             if (!appData.employees[empIdx].deviceBinding.mismatchLog) {
                 appData.employees[empIdx].deviceBinding.mismatchLog = [];
             }
             appData.employees[empIdx].deviceBinding.mismatchLog.push({
-                at: new Date().toISOString(),
-                attempted: currentFingerprint
+                at        : now,
+                attempted : currentFP,
+                ua        : ua.substring(0, 80)
             });
-            saveData();
-            return false; // block login
+            await saveData();
+            showDeviceBindModal('mismatch', currentFP, emp.name, db.fingerprint, db.boundAt);
+            return false;
+        }
+
+        // ── Modal helper ──
+        function showDeviceBindModal(type, currentFP, empName, boundFP, boundAt) {
+            if (type === 'first') {
+                // Re-use mismatch modal but styled as success
+                const modal = document.getElementById('deviceMismatchModal');
+                modal.querySelector('.bg-gradient-to-r').className =
+                    'bg-gradient-to-r from-emerald-500 to-teal-500 p-6 text-white text-center';
+                modal.querySelector('.fa-mobile-alt').parentElement.innerHTML =
+                    '<i class="fas fa-check-circle text-4xl"></i>';
+                modal.querySelector('h3').textContent = 'ผูกอุปกรณ์สำเร็จ!';
+                modal.querySelector('p.text-white\\/80').textContent = 'First Device Binding';
+                modal.querySelector('p.text-slate-600').textContent =
+                    `ยินดีต้อนรับ ${empName} — อุปกรณ์นี้ถูกผูกกับบัญชีของคุณแล้ว`;
+                modal.querySelector('p.text-slate-400').textContent =
+                    'ครั้งต่อไประบบจะจดจำอุปกรณ์นี้โดยอัตโนมัติ';
+                const box = modal.querySelector('#dm-bound-device').closest('.bg-slate-50');
+                box.innerHTML = `
+                    <div class="flex items-center gap-2 text-emerald-700">
+                        <i class="fas fa-fingerprint text-xl"></i>
+                        <div>
+                            <p class="text-[10px] font-black text-emerald-400 uppercase">Device ID</p>
+                            <p class="text-xs font-bold break-all">${currentFP}</p>
+                        </div>
+                    </div>`;
+                openModal('deviceMismatchModal');
+                // Auto-close after 3s
+                setTimeout(() => closeModal('deviceMismatchModal'), 3000);
+            } else {
+                // Reset to mismatch style (in case previously shown as success)
+                const modal = document.getElementById('deviceMismatchModal');
+                modal.querySelector('.bg-gradient-to-r').className =
+                    'bg-gradient-to-r from-red-500 to-orange-500 p-6 text-white text-center';
+                const boundDate = boundAt ? new Date(boundAt).toLocaleDateString('th-TH') : '—';
+                document.getElementById('dm-bound-device').textContent = boundFP;
+                document.getElementById('dm-current-device').textContent = currentFP;
+                // Restore original header content if changed
+                modal.querySelector('h3').textContent = 'อุปกรณ์ไม่ตรงกัน';
+                modal.querySelector('p.text-white\\/80').textContent = 'Device Binding Alert';
+                modal.querySelector('p.text-slate-600').textContent =
+                    `บัญชี "${empName}" ถูกผูกกับอุปกรณ์อื่นตั้งแต่ ${boundDate}`;
+                modal.querySelector('p.text-slate-400').textContent =
+                    'กรุณาติดต่อ Admin เพื่อยกเลิกการผูกอุปกรณ์เดิม';
+                openModal('deviceMismatchModal');
+            }
         }
 
         // Admin: unbind device for an employee
