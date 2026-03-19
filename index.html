@@ -482,6 +482,10 @@
                         class="px-6 py-2 rounded-lg text-sm font-bold admin-subtab-inactive hover:bg-white/50 transition flex items-center gap-2">
                         <i class="fas fa-mobile-alt"></i> Device Binding
                     </button>
+                    <button onclick="switchAdminSubTab('face')" id="btn-adm-tab-face"
+                        class="px-6 py-2 rounded-lg text-sm font-bold admin-subtab-inactive hover:bg-white/50 transition flex items-center gap-2">
+                        <i class="fas fa-user-circle"></i> ใบหน้า
+                    </button>
                 </div>
 
                 <!-- View 1: Yard Management -->
@@ -690,17 +694,17 @@
                         </div>
                     </div>
 
-                    <!-- Stats Row -->
+                    <!-- Stats Row (clickable cards) -->
                     <div class="grid grid-cols-3 gap-4 mb-4">
-                        <div class="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm text-center">
+                        <div onclick="filterDeviceTable('bound')" class="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-indigo-100 transition" id="card-stat-bound">
                             <p class="text-[10px] font-black text-indigo-400 uppercase mb-1"><i class="fas fa-link mr-1"></i>ผูกอุปกรณ์แล้ว</p>
                             <p id="db-stat-bound" class="text-3xl font-black text-indigo-600">0</p>
                         </div>
-                        <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-sm text-center">
+                        <div onclick="filterDeviceTable('unbound')" class="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-slate-100 transition" id="card-stat-unbound">
                             <p class="text-[10px] font-black text-slate-400 uppercase mb-1"><i class="fas fa-unlink mr-1"></i>ยังไม่ผูก</p>
                             <p id="db-stat-unbound" class="text-3xl font-black text-slate-400">0</p>
                         </div>
-                        <div class="bg-red-50 rounded-2xl p-4 border border-red-100 shadow-sm text-center">
+                        <div onclick="filterDeviceTable('mismatch')" class="bg-red-50 rounded-2xl p-4 border border-red-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-red-100 transition" id="card-stat-mismatch">
                             <p class="text-[10px] font-black text-red-400 uppercase mb-1"><i class="fas fa-exclamation-triangle mr-1"></i>Device ไม่ตรง</p>
                             <p id="db-stat-mismatch" class="text-3xl font-black text-red-500">0</p>
                         </div>
@@ -721,6 +725,59 @@
                                     </tr>
                                 </thead>
                                 <tbody id="adm-device-list" class="divide-y divide-slate-50"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View 4: Face Registration Management -->
+                <div id="adm-view-face-container" class="hidden">
+                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-4">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-user-circle text-emerald-500"></i> จัดการใบหน้า
+                                </h2>
+                                <p class="text-xs text-slate-400 mt-1">ดูสถานะ ปลดล็อค หรือยกเลิกการลงทะเบียนใบหน้าของพนักงาน</p>
+                            </div>
+                            <div class="relative">
+                                <i class="fas fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                                <input type="text" id="faceSearch" onkeyup="renderFaceTable()" placeholder="ค้นหาพนักงาน..."
+                                    class="bg-slate-100 border-none rounded-xl pl-8 pr-4 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-emerald-400 outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Face Stats Row -->
+                    <div class="grid grid-cols-3 gap-4 mb-4">
+                        <div onclick="filterFaceTable('registered')" id="face-card-registered" class="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-emerald-100 transition">
+                            <p class="text-[10px] font-black text-emerald-500 uppercase mb-1"><i class="fas fa-check-circle mr-1"></i>ลงทะเบียนแล้ว</p>
+                            <p id="face-stat-registered" class="text-3xl font-black text-emerald-600">0</p>
+                        </div>
+                        <div onclick="filterFaceTable('unregistered')" id="face-card-unregistered" class="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-slate-100 transition">
+                            <p class="text-[10px] font-black text-slate-400 uppercase mb-1"><i class="fas fa-user-slash mr-1"></i>ยังไม่ลงทะเบียน</p>
+                            <p id="face-stat-unregistered" class="text-3xl font-black text-slate-400">0</p>
+                        </div>
+                        <div onclick="filterFaceTable('locked')" id="face-card-locked" class="bg-red-50 rounded-2xl p-4 border border-red-100 shadow-sm text-center cursor-pointer hover:shadow-md hover:bg-red-100 transition">
+                            <p class="text-[10px] font-black text-red-400 uppercase mb-1"><i class="fas fa-lock mr-1"></i>ถูกล็อค</p>
+                            <p id="face-stat-locked" class="text-3xl font-black text-red-500">0</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-gradient-to-r from-slate-900 to-emerald-900 text-white sticky top-0 z-10">
+                                    <tr>
+                                        <th class="p-4 font-black text-xs">พนักงาน</th>
+                                        <th class="p-4 font-black text-xs">สังกัด</th>
+                                        <th class="p-4 text-center font-black text-xs">สถานะ</th>
+                                        <th class="p-4 font-black text-xs">ลงทะเบียนล่าสุด</th>
+                                        <th class="p-4 text-center font-black text-xs">ครั้ง/เดือน</th>
+                                        <th class="p-4 text-center font-black text-xs">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adm-face-list" class="divide-y divide-slate-50"></tbody>
                             </table>
                         </div>
                     </div>
@@ -2273,6 +2330,46 @@
         </div>
     </div>
     <!-- Modal: Device Binding Status (First Bind / Mismatch) -->
+    <!-- Modal: Employee Device Detail (Admin) -->
+    <div id="deviceEmpModal"
+        class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden z-[200] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-slide-in">
+            <div class="bg-gradient-to-r from-indigo-500 to-indigo-700 p-5 text-white flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-mobile-alt text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-black text-base">ข้อมูล Device Binding</div>
+                        <div class="text-indigo-200 text-xs">รายละเอียดการผูกอุปกรณ์</div>
+                    </div>
+                </div>
+                <button onclick="closeModal('deviceEmpModal')" class="text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="deviceEmpModalBody" class="p-5 overflow-y-auto max-h-[70vh]"></div>
+        </div>
+    </div>
+
+    <!-- Modal: Employee Face Detail (Admin) -->
+    <div id="faceEmpModal"
+        class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden z-[200] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-slide-in">
+            <div class="bg-gradient-to-r from-emerald-500 to-teal-600 p-5 text-white flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-user-circle text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-black text-base">ข้อมูลใบหน้า</div>
+                        <div class="text-emerald-100 text-xs">รายละเอียดการลงทะเบียนใบหน้า</div>
+                    </div>
+                </div>
+                <button onclick="closeModal('faceEmpModal')" class="text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="faceEmpModalBody" class="p-5 overflow-y-auto max-h-[70vh]"></div>
+        </div>
+    </div>
+
     <div id="deviceMismatchModal"
         class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden z-[200] flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-slide-in">
@@ -3881,13 +3978,15 @@
             const btnYard = document.getElementById('btn-adm-tab-yard');
             const btnAll = document.getElementById('btn-adm-tab-all');
             const btnDevice = document.getElementById('btn-adm-tab-device');
+            const btnFace = document.getElementById('btn-adm-tab-face');
             const viewYard = document.getElementById('adm-view-yard-container');
             const viewAll = document.getElementById('adm-view-all-container');
             const viewDevice = document.getElementById('adm-view-device-container');
+            const viewFace = document.getElementById('adm-view-face-container');
 
             // Reset all
-            [btnYard, btnAll, btnDevice].forEach(b => { if(b) { b.classList.remove('admin-subtab-active','shadow-sm'); b.classList.add('admin-subtab-inactive','hover:bg-white/50'); } });
-            [viewYard, viewAll, viewDevice].forEach(v => { if(v) v.classList.add('hidden'); });
+            [btnYard, btnAll, btnDevice, btnFace].forEach(b => { if(b) { b.classList.remove('admin-subtab-active','shadow-sm'); b.classList.add('admin-subtab-inactive','hover:bg-white/50'); } });
+            [viewYard, viewAll, viewDevice, viewFace].forEach(v => { if(v) v.classList.add('hidden'); });
 
             if (mode === 'yard') {
                 btnYard.classList.add('admin-subtab-active','shadow-sm'); btnYard.classList.remove('admin-subtab-inactive','hover:bg-white/50');
@@ -3900,6 +3999,10 @@
                 btnDevice.classList.add('admin-subtab-active','shadow-sm'); btnDevice.classList.remove('admin-subtab-inactive','hover:bg-white/50');
                 viewDevice.classList.remove('hidden');
                 renderDeviceBindingTable();
+            } else if (mode === 'face') {
+                btnFace.classList.add('admin-subtab-active','shadow-sm'); btnFace.classList.remove('admin-subtab-inactive','hover:bg-white/50');
+                viewFace.classList.remove('hidden');
+                renderFaceTable();
             }
         };
 
@@ -7172,16 +7275,19 @@
         // DEVICE BINDING SYSTEM
         // ==========================================
 
-        // Generate a fingerprint from browser/device characteristics
+        // Generate a fingerprint from HARDWARE characteristics only (browser-agnostic)
+        // ไม่ใช้ userAgent → เครื่องเดียวกันเปิดหลายเบราเซอร์/LINE ได้
         async function getDeviceFingerprint() {
             const components = [
-                navigator.userAgent,
-                navigator.language,
+                // ❌ navigator.userAgent  ← ตัดออก: แต่ละเบราเซอร์ต่างกัน
                 screen.width + 'x' + screen.height,
                 screen.colorDepth,
+                screen.pixelDepth || screen.colorDepth,
                 new Date().getTimezoneOffset(),
                 navigator.hardwareConcurrency || 'unknown',
-                navigator.platform || 'unknown'
+                navigator.platform || 'unknown',
+                navigator.language || 'unknown',
+                (screen.availWidth || '') + 'x' + (screen.availHeight || '')
             ];
             const raw = components.join('|');
             // Simple hash using SubtleCrypto
@@ -7336,6 +7442,261 @@
             alert(msg);
         };
 
+        // ── Filter Device table by card click ──
+        let deviceFilterMode = 'all';
+        window.filterDeviceTable = function(mode) {
+            deviceFilterMode = (deviceFilterMode === mode) ? 'all' : mode;
+            ['bound','unbound','mismatch'].forEach(m => {
+                const card = document.getElementById('card-stat-' + m);
+                if (!card) return;
+                card.classList.toggle('ring-2', deviceFilterMode === m);
+                card.classList.toggle('ring-offset-1', deviceFilterMode === m);
+                if (m === 'bound') card.classList.toggle('ring-indigo-400', deviceFilterMode === m);
+                if (m === 'unbound') card.classList.toggle('ring-slate-400', deviceFilterMode === m);
+                if (m === 'mismatch') card.classList.toggle('ring-red-400', deviceFilterMode === m);
+            });
+            renderDeviceBindingTable();
+        };
+
+        // ── Show employee device detail popup ──
+        window.showDeviceEmpModal = function(empId) {
+            const emp = appData.employees.find(e => e.id === empId);
+            if (!emp) return;
+            const db = emp.deviceBinding;
+            const hasBound = db && db.fingerprint;
+            const hasMismatch = db && db.mismatchLog && db.mismatchLog.length > 0;
+            let statusHtml = '';
+            if (!hasBound) {
+                statusHtml = '<span class="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold"><i class="fas fa-unlink mr-1"></i>ยังไม่ผูกอุปกรณ์</span>';
+            } else if (hasMismatch) {
+                statusHtml = '<span class="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse"><i class="fas fa-exclamation-triangle mr-1"></i>มีการพยายามใช้เครื่องอื่น</span>';
+            } else {
+                statusHtml = '<span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold"><i class="fas fa-check-circle mr-1"></i>ผูกอุปกรณ์แล้ว</span>';
+            }
+            const mismatchHistory = (hasMismatch ? db.mismatchLog.slice(-3).reverse() : [])
+                .map((l,i) => `<div class="text-xs bg-red-50 rounded-lg p-2 border border-red-100">
+                    <span class="font-bold text-red-500">#${i+1}</span>
+                    <span class="text-slate-500 ml-2">${new Date(l.at).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span>
+                    <div class="font-mono text-[10px] text-slate-400 mt-0.5">${(l.attempted||'').substring(0,16)}...</div>
+                </div>`).join('') || '<p class="text-xs text-slate-400">ไม่มีประวัติ</p>';
+
+            const unbindBtn = hasBound
+                ? `<button onclick="adminUnbindDevice(${emp.id}); closeModal('deviceEmpModal')" class="bg-red-500 hover:bg-red-600 text-white text-sm px-5 py-2.5 rounded-xl font-bold transition shadow-sm w-full mt-4"><i class="fas fa-unlink mr-2"></i>ยกเลิก Device Binding</button>`
+                : '';
+
+            document.getElementById('deviceEmpModalBody').innerHTML = `
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-white font-black text-xl">${(emp.name||'?')[0]}</div>
+                    <div>
+                        <div class="font-black text-slate-800 text-lg">${emp.name}</div>
+                        <div class="text-xs text-slate-400">${emp.code||''} · ${emp.location||'—'}</div>
+                    </div>
+                </div>
+                <div class="mb-3">${statusHtml}</div>
+                <div class="space-y-2 text-sm mb-4">
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">Device Fingerprint</span>
+                        <span class="font-mono text-[11px] text-slate-600">${hasBound ? db.fingerprint.substring(0,16)+'...' : '—'}</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">ผูกครั้งแรก</span>
+                        <span class="text-slate-600">${hasBound && db.boundAt ? new Date(db.boundAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}) : '—'}</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">ใช้งานล่าสุด</span>
+                        <span class="text-slate-600">${hasBound && db.lastSeen ? new Date(db.lastSeen).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}) : '—'}</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">แพลตฟอร์ม</span>
+                        <span class="text-slate-600">${hasBound && db.platform ? db.platform : '—'}</span>
+                    </div>
+                </div>
+                ${hasMismatch ? `<div class="mb-2"><p class="text-xs font-black text-red-500 uppercase mb-2"><i class="fas fa-history mr-1"></i>ประวัติพยายามใช้เครื่องอื่น (ล่าสุด 3 ครั้ง)</p><div class="space-y-1">${mismatchHistory}</div></div>` : ''}
+                ${unbindBtn}
+            `;
+            openModal('deviceEmpModal');
+        };
+
+        // ── Filter Face table by card click ──
+        let faceFilterMode = 'all';
+        window.filterFaceTable = function(mode) {
+            faceFilterMode = (faceFilterMode === mode) ? 'all' : mode;
+            ['registered','unregistered','locked'].forEach(m => {
+                const card = document.getElementById('face-card-' + m);
+                if (!card) return;
+                card.classList.toggle('ring-2', faceFilterMode === m);
+                card.classList.toggle('ring-offset-1', faceFilterMode === m);
+                if (m === 'registered') card.classList.toggle('ring-emerald-400', faceFilterMode === m);
+                if (m === 'unregistered') card.classList.toggle('ring-slate-400', faceFilterMode === m);
+                if (m === 'locked') card.classList.toggle('ring-red-400', faceFilterMode === m);
+            });
+            renderFaceTable();
+        };
+
+        // ── Render Face Management Table ──
+        window.renderFaceTable = function() {
+            const tbody = document.getElementById('adm-face-list');
+            if (!tbody) return;
+            const search = (document.getElementById('faceSearch')?.value || '').toLowerCase();
+            tbody.innerHTML = '';
+            let regCount = 0, unregCount = 0, lockedCount = 0;
+            const now = new Date();
+            const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+            appData.employees.forEach(emp => {
+                if (search && !emp.name.toLowerCase().includes(search) && !(emp.code||'').toLowerCase().includes(search)) return;
+                const hasDesc = emp.faceDescriptors && emp.faceDescriptors.length > 0;
+                const regLog = emp.faceRegLog || [];
+                const monthCount = regLog.filter(d => d.startsWith(thisMonth)).length;
+                const isLocked = monthCount >= 3 && !emp.faceRegUnlocked;
+
+                if (hasDesc) regCount++; else unregCount++;
+                if (isLocked) lockedCount++;
+
+                // Apply filter
+                if (faceFilterMode === 'registered' && !hasDesc) return;
+                if (faceFilterMode === 'unregistered' && hasDesc) return;
+                if (faceFilterMode === 'locked' && !isLocked) return;
+
+                let statusBadge;
+                if (isLocked) {
+                    statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-1 rounded-full text-[10px] font-bold animate-pulse"><i class="fas fa-lock mr-1"></i>ถูกล็อค</span>';
+                } else if (hasDesc) {
+                    statusBadge = '<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold"><i class="fas fa-check-circle mr-1"></i>ลงทะเบียนแล้ว</span>';
+                } else {
+                    statusBadge = '<span class="bg-slate-100 text-slate-500 px-2 py-1 rounded-full text-[10px] font-bold"><i class="fas fa-user-slash mr-1"></i>ยังไม่ลงทะเบียน</span>';
+                }
+                const regAt = emp.faceRegisteredAt ? `<span class="text-xs text-slate-500">${new Date(emp.faceRegisteredAt).toLocaleDateString('th-TH')}</span>` : '<span class="text-slate-300 text-xs">—</span>';
+                const unlockBtn = isLocked
+                    ? `<button onclick="adminUnlockFace(${emp.id})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-sm"><i class="fas fa-unlock mr-1"></i>ปลดล็อค</button>`
+                    : '';
+                const deleteBtn = hasDesc
+                    ? `<button onclick="adminDeleteFace(${emp.id})" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-sm"><i class="fas fa-trash-alt mr-1"></i>ยกเลิกใบหน้า</button>`
+                    : '<span class="text-slate-300 text-xs">—</span>';
+
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-50 transition cursor-pointer';
+                row.onclick = () => showFaceEmpModal(emp.id);
+                row.innerHTML = `
+                    <td class="p-4">
+                        <div class="font-bold text-slate-800 text-sm">${emp.name}</div>
+                        <div class="text-[10px] text-slate-400">${emp.code||''}</div>
+                    </td>
+                    <td class="p-4 text-xs text-slate-500">${emp.location||'—'}</td>
+                    <td class="p-4 text-center">${statusBadge}</td>
+                    <td class="p-4">${regAt}</td>
+                    <td class="p-4 text-center">
+                        <span class="text-sm font-black ${monthCount >= 3 ? 'text-red-500' : 'text-slate-600'}">${monthCount}/3</span>
+                    </td>
+                    <td class="p-4 text-center" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-center gap-2">
+                            ${unlockBtn}
+                            ${deleteBtn}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            const el1 = document.getElementById('face-stat-registered');
+            const el2 = document.getElementById('face-stat-unregistered');
+            const el3 = document.getElementById('face-stat-locked');
+            if (el1) el1.textContent = regCount;
+            if (el2) el2.textContent = unregCount;
+            if (el3) el3.textContent = lockedCount;
+        };
+
+        // ── Admin: Unlock face registration ──
+        window.adminUnlockFace = async function(empId) {
+            const emp = appData.employees.find(e => e.id === empId);
+            if (!emp) return;
+            if (!confirm(`ปลดล็อคการลงทะเบียนใบหน้าให้ ${emp.name}?`)) return;
+            const empIdx = appData.employees.findIndex(e => e.id === empId);
+            appData.employees[empIdx].faceRegUnlocked = true;
+            await saveData();
+            renderFaceTable();
+            showToast(`ปลดล็อคใบหน้า ${emp.name} แล้ว`);
+        };
+
+        // ── Admin: Delete face data ──
+        window.adminDeleteFace = async function(empId) {
+            const emp = appData.employees.find(e => e.id === empId);
+            if (!emp) return;
+            if (!confirm(`ยืนยันยกเลิกการลงทะเบียนใบหน้าของ ${emp.name}?\nข้อมูลใบหน้าจะถูกลบทั้งหมด`)) return;
+            const empIdx = appData.employees.findIndex(e => e.id === empId);
+            appData.employees[empIdx].faceDescriptors = [];
+            appData.employees[empIdx].faceDescriptorCount = 0;
+            appData.employees[empIdx].faceRegisteredAt = null;
+            appData.employees[empIdx].faceRegUnlocked = false;
+            await saveData();
+            loadFaceDatabase(); // reload in-memory face db
+            renderFaceTable();
+            showToast(`ลบข้อมูลใบหน้า ${emp.name} แล้ว`);
+        };
+
+        // ── Show employee face detail popup ──
+        window.showFaceEmpModal = function(empId) {
+            const emp = appData.employees.find(e => e.id === empId);
+            if (!emp) return;
+            const hasDesc = emp.faceDescriptors && emp.faceDescriptors.length > 0;
+            const regLog = emp.faceRegLog || [];
+            const now = new Date();
+            const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+            const monthCount = regLog.filter(d => d.startsWith(thisMonth)).length;
+            const isLocked = monthCount >= 3 && !emp.faceRegUnlocked;
+
+            let statusHtml;
+            if (isLocked) {
+                statusHtml = '<span class="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse"><i class="fas fa-lock mr-1"></i>ถูกล็อค</span>';
+            } else if (hasDesc) {
+                statusHtml = '<span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold"><i class="fas fa-check-circle mr-1"></i>ลงทะเบียนแล้ว</span>';
+            } else {
+                statusHtml = '<span class="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold"><i class="fas fa-user-slash mr-1"></i>ยังไม่ลงทะเบียน</span>';
+            }
+
+            const history = regLog.slice(-5).reverse().map((d,i) =>
+                `<div class="text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 flex items-center gap-2">
+                    <i class="fas fa-camera text-emerald-400"></i>
+                    <span class="text-slate-600">${new Date(d).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span>
+                </div>`
+            ).join('') || '<p class="text-xs text-slate-400">ไม่มีประวัติ</p>';
+
+            const unlockBtn = isLocked
+                ? `<button onclick="adminUnlockFace(${emp.id}); closeModal('faceEmpModal')" class="bg-amber-500 hover:bg-amber-600 text-white text-sm px-5 py-2.5 rounded-xl font-bold transition shadow-sm w-full mt-2"><i class="fas fa-unlock mr-2"></i>ปลดล็อคการลงทะเบียน</button>` : '';
+            const deleteBtn = hasDesc
+                ? `<button onclick="adminDeleteFace(${emp.id}); closeModal('faceEmpModal')" class="bg-red-500 hover:bg-red-600 text-white text-sm px-5 py-2.5 rounded-xl font-bold transition shadow-sm w-full mt-2"><i class="fas fa-trash-alt mr-2"></i>ยกเลิกการลงทะเบียนใบหน้า</button>` : '';
+
+            document.getElementById('faceEmpModalBody').innerHTML = `
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white font-black text-xl">${(emp.name||'?')[0]}</div>
+                    <div>
+                        <div class="font-black text-slate-800 text-lg">${emp.name}</div>
+                        <div class="text-xs text-slate-400">${emp.code||''} · ${emp.location||'—'}</div>
+                    </div>
+                </div>
+                <div class="mb-3">${statusHtml}</div>
+                <div class="space-y-2 text-sm mb-4">
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">ลงทะเบียนล่าสุด</span>
+                        <span class="text-slate-600">${emp.faceRegisteredAt ? new Date(emp.faceRegisteredAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}) : '—'}</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">ลงทะเบียนเดือนนี้</span>
+                        <span class="font-black ${monthCount >= 3 ? 'text-red-500' : 'text-slate-700'}">${monthCount} / 3 ครั้ง</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 rounded-xl px-4 py-2">
+                        <span class="text-slate-400 font-bold">จำนวน Descriptors</span>
+                        <span class="text-slate-600">${emp.faceDescriptors ? emp.faceDescriptors.length : 0} ชุด</span>
+                    </div>
+                </div>
+                <p class="text-[10px] font-black text-slate-400 uppercase mb-2"><i class="fas fa-history mr-1"></i>ประวัติการลงทะเบียน</p>
+                <div class="space-y-1 mb-2">${history}</div>
+                ${unlockBtn}
+                ${deleteBtn}
+            `;
+            openModal('faceEmpModal');
+        };
+
         window.renderDeviceBindingTable = function() {
             const tbody = document.getElementById('adm-device-list');
             if (!tbody) return;
@@ -7352,9 +7713,13 @@
                 const hasBound = db && db.fingerprint;
                 const hasMismatch = db && db.mismatchLog && db.mismatchLog.length > 0;
 
-                if (hasBound) boundCount++;
-                else unboundCount++;
+                if (hasBound) boundCount++; else unboundCount++;
                 if (hasMismatch) mismatchCount++;
+
+                // Apply filter
+                if (deviceFilterMode === 'bound' && !hasBound) return;
+                if (deviceFilterMode === 'unbound' && hasBound) return;
+                if (deviceFilterMode === 'mismatch' && !hasMismatch) return;
 
                 let statusBadge, statusClass;
                 if (!hasBound) {
@@ -7380,16 +7745,13 @@
                     ? `<span class="text-xs text-slate-500">${new Date(db.lastSeen).toLocaleString('th-TH', {dateStyle:'short', timeStyle:'short'})}</span>`
                     : '<span class="text-slate-300 text-xs">—</span>';
 
-                const mismatchBtn = hasMismatch
-                    ? `<button onclick="adminViewMismatchLog(${emp.id})" class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded bg-red-50 hover:bg-red-100 transition" title="ดูประวัติ Device ไม่ตรง"><i class="fas fa-history"></i></button>`
-                    : '';
-
                 const unbindBtn = hasBound
-                    ? `<button onclick="adminUnbindDevice(${emp.id})" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-sm" title="ยกเลิก Device Binding"><i class="fas fa-unlink mr-1"></i>ยกเลิก</button>`
+                    ? `<button onclick="event.stopPropagation(); adminUnbindDevice(${emp.id})" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-sm" title="ยกเลิก Device Binding"><i class="fas fa-unlink mr-1"></i>ยกเลิก</button>`
                     : `<span class="text-slate-300 text-xs">—</span>`;
 
                 const row = document.createElement('tr');
-                row.className = `hover:bg-slate-50 transition ${statusClass}`;
+                row.className = `hover:bg-slate-50 transition cursor-pointer ${statusClass}`;
+                row.onclick = () => showDeviceEmpModal(emp.id);
                 row.innerHTML = `
                     <td class="p-4">
                         <div class="font-bold text-slate-800 text-sm">${emp.name}</div>
@@ -7400,9 +7762,8 @@
                     <td class="p-4">${fingerprintDisplay}</td>
                     <td class="p-4">${boundAtDisplay}</td>
                     <td class="p-4">${lastSeenDisplay}</td>
-                    <td class="p-4 text-center">
+                    <td class="p-4 text-center" onclick="event.stopPropagation()">
                         <div class="flex items-center justify-center gap-2">
-                            ${mismatchBtn}
                             ${unbindBtn}
                         </div>
                     </td>
