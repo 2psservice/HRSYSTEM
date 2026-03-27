@@ -60,35 +60,112 @@ tr:nth-child(even){background:#f8fafc;}
 #page-loader{position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:8888;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;}
 #page-loader.hidden{display:none;}
 
-/* ===== FACE RECOGNITION ===== */
-#face-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;align-items:center;justify-content:center;}
+/* ===== FACE RECOGNITION — Redesigned 2025 ===== */
+#face-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
 #face-modal.active{display:flex;}
-.face-ring{position:absolute;border:3px solid #22d3ee;border-radius:50%;pointer-events:none;transition:border-color .25s,box-shadow .25s;}
-@keyframes faceRingPulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.015)}}
-.face-ring-pulse{animation:faceRingPulse 1.2s ease-in-out infinite;}
-/* Green radar scan line — sweeps top→bottom→top */
-@keyframes radarScan{
-  0%  {top:0%;opacity:1}
-  45% {top:96%;opacity:.9}
-  50% {top:96%;opacity:0}
-  55% {top:0%;opacity:0}
-  60% {top:0%;opacity:1}
-  100%{top:0%;opacity:1}
-}
-@keyframes radarScanRev{
-  0%  {top:96%;opacity:1}
-  45% {top:0%;opacity:.9}
-  50% {top:0%;opacity:0}
-  55% {top:96%;opacity:0}
-  60% {top:96%;opacity:1}
-  100%{top:96%;opacity:1}
-}
-#face-radar-line{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent 0%,#22c55e 20%,#4ade80 50%,#22c55e 80%,transparent 100%);filter:drop-shadow(0 0 6px #22c55e);pointer-events:none;animation:radarScan 2s linear infinite;}
-#face-radar-glow{position:absolute;left:0;right:0;height:40px;background:linear-gradient(180deg,rgba(34,197,94,.18) 0%,transparent 100%);pointer-events:none;animation:radarScan 2s linear infinite;margin-top:-2px;}
-.face-ring.green{box-shadow:0 0 0 3px rgba(34,197,94,.3),0 0 24px rgba(34,197,94,.4);}
-.face-ring.red{box-shadow:0 0 0 3px rgba(239,68,68,.3),0 0 24px rgba(239,68,68,.4);}
-.face-ring.yellow{box-shadow:0 0 0 3px rgba(245,158,11,.3),0 0 16px rgba(245,158,11,.3);}
-.face-status-box{margin-top:14px;padding:12px 16px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;transition:all .3s;}
+@media(min-height:700px){#face-modal{align-items:center;}}
+
+/* Inner card */
+#face-modal-inner{background:#070e1c;border-radius:28px 28px 0 0;width:100%;max-width:420px;overflow:hidden;
+  box-shadow:0 -8px 60px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.06);
+  max-height:98dvh;display:flex;flex-direction:column;}
+@media(min-height:700px){#face-modal-inner{border-radius:28px;max-height:92dvh;}}
+
+/* Header */
+.fm-header{padding:16px 18px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;}
+.fm-close{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#94a3b8;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s;}
+.fm-close:hover{background:rgba(255,255,255,.2);}
+
+/* Camera */
+#face-cam-wrap{position:relative;background:#000;overflow:hidden;flex-shrink:0;aspect-ratio:3/4;max-height:52dvh;}
+#face-vid{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+
+/* Ring */
+.face-ring{position:absolute;border:3px solid #22d3ee;border-radius:50%;pointer-events:none;transition:border-color .3s,box-shadow .3s,transform .3s;}
+@keyframes faceRingPulse{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.018)}}
+.face-ring-pulse{animation:faceRingPulse 1.4s ease-in-out infinite;}
+.face-ring.green{border-color:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.25),0 0 32px rgba(34,197,94,.5);animation:none;transform:scale(1.01);}
+.face-ring.red{border-color:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.25),0 0 24px rgba(239,68,68,.5);animation:none;}
+.face-ring.yellow{border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.25),0 0 20px rgba(245,158,11,.4);}
+
+/* Radar line */
+@keyframes radarScan{0%{top:0%;opacity:1}45%{top:96%;opacity:.9}50%{top:96%;opacity:0}55%{top:0%;opacity:0}60%{top:0%;opacity:1}100%{top:0%;opacity:1}}
+#face-radar-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#22c55e 20%,#4ade80 50%,#22c55e 80%,transparent);filter:drop-shadow(0 0 5px #22c55e);pointer-events:none;animation:radarScan 2.5s linear infinite;}
+#face-radar-glow{position:absolute;left:0;right:0;height:50px;background:linear-gradient(180deg,rgba(34,197,94,.12) 0%,transparent 100%);pointer-events:none;animation:radarScan 2.5s linear infinite;margin-top:-2px;}
+
+/* Name badge — floats above bottom of camera */
+#face-name-badge{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.75);backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,.18);border-radius:50px;
+  padding:9px 22px;color:#fff;font-weight:700;font-size:15px;white-space:nowrap;
+  display:none;box-shadow:0 4px 20px rgba(0,0,0,.5);
+  animation:fmBadgeIn .2s ease;}
+@keyframes fmBadgeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+#face-name-badge.green-badge{border-color:rgba(34,197,94,.5);background:rgba(5,46,22,.85);}
+#face-name-badge.red-badge{border-color:rgba(239,68,68,.5);background:rgba(69,10,10,.85);}
+
+/* Hint banner */
+#face-hint-banner{position:absolute;top:0;left:0;right:0;padding:9px 14px;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;gap:8px;}
+#face-hint-text{color:#fef3c7;font-size:13px;font-weight:700;}
+
+/* Size bar */
+#face-size-bar-wrap{position:absolute;bottom:0;left:0;right:0;padding:7px 12px 10px;background:rgba(0,0,0,.6);display:none;}
+
+/* Spoof overlay */
+#face-spoof-overlay{display:none;position:absolute;inset:0;background:rgba(180,20,20,.9);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;flex-direction:column;gap:10px;}
+@keyframes spoofShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
+#face-spoof-overlay .spoof-icon{font-size:54px;animation:spoofShake .4s;}
+
+/* Success overlay */
+#face-scan-overlay{display:none;position:absolute;inset:0;background:rgba(5,46,22,.6);backdrop-filter:blur(2px);align-items:center;justify-content:center;}
+@keyframes checkPop{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+#face-scan-overlay i{animation:checkPop .3s ease;}
+
+/* Corner brackets */
+.fm-corner{position:absolute;width:24px;height:24px;pointer-events:none;}
+.fm-corner.tl{top:14px;left:14px;border-top:3px solid #22d3ee;border-left:3px solid #22d3ee;border-radius:5px 0 0 0;}
+.fm-corner.tr{top:14px;right:14px;border-top:3px solid #22d3ee;border-right:3px solid #22d3ee;border-radius:0 5px 0 0;}
+.fm-corner.bl{bottom:14px;left:14px;border-bottom:3px solid #22d3ee;border-left:3px solid #22d3ee;border-radius:0 0 0 5px;}
+.fm-corner.br{bottom:14px;right:14px;border-bottom:3px solid #22d3ee;border-right:3px solid #22d3ee;border-radius:0 0 5px 0;}
+
+/* Registration step dots */
+#face-reg-steps{display:none;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;}
+.frs-row{display:flex;align-items:center;justify-content:center;gap:0;}
+.frs-item{display:flex;flex-direction:column;align-items:center;gap:5px;}
+.frs-dot{width:44px;height:44px;border-radius:50%;background:#101827;border:2px solid #1e3a5f;
+  display:flex;align-items:center;justify-content:center;font-size:20px;transition:all .35s;}
+.frs-dot.active{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 5px rgba(59,130,246,.18);transform:scale(1.08);}
+.frs-dot.done{border-color:#22c55e;background:rgba(34,197,94,.15);box-shadow:0 0 0 5px rgba(34,197,94,.12);}
+.frs-lbl{font-size:10px;color:#64748b;font-weight:600;}
+.frs-lbl.active{color:#60a5fa;}
+.frs-lbl.done{color:#22c55e;}
+.frs-line{width:32px;height:2px;background:#1e3a5f;margin-bottom:18px;flex-shrink:0;}
+.frs-line.done{background:#22c55e;}
+
+/* Bottom status panel */
+#face-bottom-panel{padding:14px 16px 4px;flex-shrink:0;}
+.face-status-box{padding:12px 16px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;transition:all .3s;line-height:1.5;}
+
+/* Confidence bar (checkin mode) */
+#face-conf-bar-wrap{margin:0 16px 10px;display:none;}
+#face-conf-bar-inner{height:5px;border-radius:4px;background:#1e2d40;overflow:hidden;}
+#face-conf-bar-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);width:0%;transition:width .2s;border-radius:4px;}
+
+/* Progress bar */
+#face-progress-wrap{margin:0 16px 10px;display:none;}
+#face-progress-bar{height:100%;background:linear-gradient(90deg,#6366f1,#22d3ee);border-radius:8px;width:0%;transition:width .3s;}
+
+/* Tips row */
+#face-tips-row{display:flex;gap:6px;padding:0 16px 14px;flex-wrap:wrap;}
+.face-tip{background:#101827;border-radius:10px;padding:7px 10px;font-size:10px;color:#64748b;flex:1;min-width:80px;text-align:center;}
+.face-tip i{display:block;margin-bottom:3px;font-size:13px;}
+
+/* Cancel button */
+#face-cancel-btn{margin:0 16px 16px;width:calc(100% - 32px);background:#101827;color:#94a3b8;
+  border:1px solid #1e3a5f;border-radius:14px;padding:13px;font-size:14px;font-weight:600;
+  cursor:pointer;font-family:Sarabun,sans-serif;transition:all .2s;}
+#face-cancel-btn:hover{background:#1e2d40;color:#cbd5e1;}
 @keyframes liveMapPulse{
   0%,100%{box-shadow:0 3px 10px rgba(0,0,0,.4);}
   50%{box-shadow:0 0 0 8px rgba(34,197,94,.2),0 3px 10px rgba(0,0,0,.4);}
@@ -204,101 +281,127 @@ tr:nth-child(even){background:#f8fafc;}
   </div>
 </div>
 
-<!-- FACE RECOGNITION MODAL -->
+<!-- FACE RECOGNITION MODAL — Redesigned -->
 <div id="face-modal">
-  <div style="background:#0f172a;border-radius:24px;padding:20px;width:100%;max-width:390px;margin:0 16px;border:1px solid #1e293b;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div id="face-modal-inner">
+
+    <!-- ── Header ── -->
+    <div class="fm-header">
       <div>
-        <h3 style="color:#f1f5f9;font-size:16px;font-weight:700;margin:0;" id="face-modal-title">สแกนใบหน้า</h3>
-        <p style="color:#64748b;font-size:11px;margin:4px 0 0;" id="face-modal-sub">TensorFlow.js · ประมวลผลในเครื่อง 100%</p>
+        <h3 id="face-modal-title" style="color:#f1f5f9;font-size:15px;font-weight:700;margin:0;"></h3>
+        <p id="face-modal-sub" style="color:#475569;font-size:11px;margin:3px 0 0;"></p>
       </div>
-      <button onclick="stopFaceCam()" style="background:rgba(255,255,255,.1);border:none;color:#94a3b8;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;">&times;</button>
+      <button class="fm-close" onclick="stopFaceCam()" aria-label="ปิด">&times;</button>
     </div>
 
-    <!-- Camera viewport -->
-    <div style="position:relative;border-radius:18px;overflow:hidden;background:#000;aspect-ratio:4/3;">
-      <video id="face-vid" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1);"></video>
+    <!-- ── Camera ── -->
+    <div id="face-cam-wrap">
+      <video id="face-vid" autoplay playsinline muted></video>
 
-      <!-- Oval guide ring — wider -->
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-        <div class="face-ring face-ring-pulse" id="face-ring" style="width:220px;height:270px;border-color:#22d3ee;border-width:3px;"></div>
+      <!-- Oval guide ring -->
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;padding-bottom:10%;">
+        <div class="face-ring face-ring-pulse" id="face-ring" style="width:62%;height:82%;"></div>
       </div>
-      <!-- Radar scan line (green, sweeps up/down) -->
+
+      <!-- Radar scan line -->
       <div id="face-radar-line"></div>
       <div id="face-radar-glow"></div>
 
-      <!-- Corner guides (bracket style) -->
-      <div id="face-corners" style="position:absolute;inset:0;pointer-events:none;">
-        <!-- Top-left -->
-        <div style="position:absolute;top:14px;left:14px;width:22px;height:22px;border-top:3px solid #22d3ee;border-left:3px solid #22d3ee;border-radius:4px 0 0 0;"></div>
-        <!-- Top-right -->
-        <div style="position:absolute;top:14px;right:14px;width:22px;height:22px;border-top:3px solid #22d3ee;border-right:3px solid #22d3ee;border-radius:0 4px 0 0;"></div>
-        <!-- Bottom-left -->
-        <div style="position:absolute;bottom:14px;left:14px;width:22px;height:22px;border-bottom:3px solid #22d3ee;border-left:3px solid #22d3ee;border-radius:0 0 0 4px;"></div>
-        <!-- Bottom-right -->
-        <div style="position:absolute;bottom:14px;right:14px;width:22px;height:22px;border-bottom:3px solid #22d3ee;border-right:3px solid #22d3ee;border-radius:0 0 4px 0;"></div>
-      </div>
+      <!-- Corner brackets -->
+      <div class="fm-corner tl" id="fc-tl"></div>
+      <div class="fm-corner tr" id="fc-tr"></div>
+      <div class="fm-corner bl" id="fc-bl"></div>
+      <div class="fm-corner br" id="fc-br"></div>
 
-      <!-- Live guidance hint (top banner inside camera) -->
-      <div id="face-hint-banner" style="position:absolute;top:0;left:0;right:0;padding:8px 12px;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;gap:8px;">
+      <!-- Top hint banner -->
+      <div id="face-hint-banner">
         <i id="face-hint-icon" class="fas fa-arrow-down" style="font-size:14px;color:#fbbf24;"></i>
-        <span id="face-hint-text" style="color:#fef3c7;font-size:12px;font-weight:700;"></span>
+        <span id="face-hint-text"></span>
       </div>
 
-      <!-- Face size meter (bottom bar inside camera) -->
-      <div id="face-size-bar-wrap" style="position:absolute;bottom:0;left:0;right:0;padding:6px 10px 8px;background:rgba(0,0,0,.55);display:none;">
+      <!-- Face size bar -->
+      <div id="face-size-bar-wrap">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="color:#94a3b8;font-size:10px;">ระยะห่างใบหน้า</span>
           <span id="face-size-pct" style="color:#22d3ee;font-size:10px;font-weight:700;">-</span>
         </div>
-        <div style="background:rgba(255,255,255,.15);border-radius:4px;height:5px;overflow:hidden;">
+        <div style="background:rgba(255,255,255,.15);border-radius:4px;height:4px;overflow:hidden;">
           <div id="face-size-fill" style="height:100%;background:linear-gradient(90deg,#f59e0b,#22c55e);border-radius:4px;width:0%;transition:width .15s;"></div>
         </div>
       </div>
 
-      <!-- Anti-spoof warning overlay -->
-      <div id="face-spoof-overlay" style="display:none;position:absolute;inset:0;background:rgba(220,38,38,.85);backdrop-filter:blur(2px);align-items:center;justify-content:center;flex-direction:column;gap:10px;border-radius:18px;">
-        <i class="fas fa-ban" style="font-size:48px;color:#fff;"></i>
-        <div style="color:#fff;font-weight:700;font-size:15px;text-align:center;padding:0 20px;" id="face-spoof-msg">ตรวจพบการทุจริต!</div>
+      <!-- Anti-spoof overlay -->
+      <div id="face-spoof-overlay">
+        <i class="fas fa-ban spoof-icon" style="font-size:54px;color:#fff;"></i>
+        <div style="color:#fff;font-weight:700;font-size:15px;text-align:center;padding:0 24px;" id="face-spoof-msg">ตรวจพบการทุจริต!</div>
       </div>
 
       <!-- Success overlay -->
-      <div id="face-scan-overlay" style="display:none;position:absolute;inset:0;background:rgba(34,197,94,.15);display:flex;align-items:center;justify-content:center;">
-        <i class="fas fa-check-circle" style="font-size:64px;color:#22c55e;filter:drop-shadow(0 0 20px rgba(34,197,94,.8));"></i>
+      <div id="face-scan-overlay" style="display:none;position:absolute;inset:0;background:rgba(5,46,22,.55);align-items:center;justify-content:center;">
+        <i class="fas fa-check-circle" style="font-size:72px;color:#22c55e;filter:drop-shadow(0 0 24px rgba(34,197,94,.9));"></i>
+      </div>
+
+      <!-- Floating name badge (shown when face matched) -->
+      <div id="face-name-badge"></div>
+    </div>
+
+    <!-- ── Registration step indicators (shown only in register mode) ── -->
+    <div id="face-reg-steps">
+      <div class="frs-row">
+        <div class="frs-item">
+          <div class="frs-dot active" id="frs-0">😐</div>
+          <div class="frs-lbl active" id="frs-lbl-0">หน้าตรง</div>
+        </div>
+        <div class="frs-line" id="frs-line-0"></div>
+        <div class="frs-item">
+          <div class="frs-dot" id="frs-1">◀</div>
+          <div class="frs-lbl" id="frs-lbl-1">หันซ้าย</div>
+        </div>
+        <div class="frs-line" id="frs-line-1"></div>
+        <div class="frs-item">
+          <div class="frs-dot" id="frs-2">▶</div>
+          <div class="frs-lbl" id="frs-lbl-2">หันขวา</div>
+        </div>
       </div>
     </div>
 
-    <!-- Status -->
-    <div id="face-status" class="face-status-box" style="background:#1e293b;color:#94a3b8;">
-      <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>กำลังโหลดโมเดล AI...
-    </div>
-
-    <!-- Progress bar for model loading -->
-    <div id="face-progress-wrap" style="margin-top:10px;display:none;">
-      <div style="background:#1e293b;border-radius:8px;height:6px;overflow:hidden;">
-        <div id="face-progress-bar" style="height:100%;background:linear-gradient(90deg,#6366f1,#22d3ee);border-radius:8px;width:0%;transition:width .3s;"></div>
+    <!-- ── Confidence bar (check-in mode) ── -->
+    <div id="face-conf-bar-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:10px;color:#64748b;">ความมั่นใจในการระบุตัวตน</span>
+        <span id="face-conf-pct" style="font-size:10px;color:#22c55e;font-weight:700;"></span>
       </div>
-      <div id="face-progress-text" style="text-align:center;font-size:11px;color:#64748b;margin-top:4px;"></div>
-    </div>
-
-    <!-- Tips row -->
-    <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;" id="face-tips-row">
-      <div style="background:#1e293b;border-radius:8px;padding:6px 10px;font-size:10px;color:#64748b;flex:1;min-width:80px;text-align:center;">
-        <i class="fas fa-sun" style="color:#fbbf24;display:block;margin-bottom:3px;font-size:13px;"></i>แสงพอเพียง
-      </div>
-      <div style="background:#1e293b;border-radius:8px;padding:6px 10px;font-size:10px;color:#64748b;flex:1;min-width:80px;text-align:center;">
-        <i class="fas fa-arrows-alt-h" style="color:#60a5fa;display:block;margin-bottom:3px;font-size:13px;"></i>ห่าง 30–60 ซม.
-      </div>
-      <div style="background:#1e293b;border-radius:8px;padding:6px 10px;font-size:10px;color:#64748b;flex:1;min-width:80px;text-align:center;">
-        <i class="fas fa-user" style="color:#34d399;display:block;margin-bottom:3px;font-size:13px;"></i>ใบหน้าตรงกรอบ
+      <div id="face-conf-bar-inner">
+        <div id="face-conf-bar-fill"></div>
       </div>
     </div>
 
-    <button onclick="stopFaceCam()"
-      style="margin-top:12px;width:100%;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:14px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;transition:all .2s;"
-      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
-      ยกเลิก
-    </button>
+    <!-- ── Status box ── -->
+    <div id="face-bottom-panel">
+      <div id="face-status" class="face-status-box" style="background:#0f1926;color:#64748b;">
+        <i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>กำลังโหลดโมเดล AI...
+      </div>
+    </div>
+
+    <!-- ── Progress bar (model loading) ── -->
+    <div id="face-progress-wrap">
+      <div style="background:#0f1926;border-radius:6px;height:5px;overflow:hidden;">
+        <div id="face-progress-bar"></div>
+      </div>
+      <div id="face-progress-text" style="text-align:center;font-size:11px;color:#475569;margin-top:4px;padding:0 16px;"></div>
+    </div>
+
+    <!-- ── Tips row ── -->
+    <div id="face-tips-row">
+      <div class="face-tip"><i class="fas fa-sun" style="color:#fbbf24;"></i>มีแสงสว่าง</div>
+      <div class="face-tip"><i class="fas fa-expand-arrows-alt" style="color:#60a5fa;"></i>ห่าง 30–60 ซม.</div>
+      <div class="face-tip"><i class="fas fa-user" style="color:#34d399;"></i>ใบหน้าตรงกรอบ</div>
+      <div class="face-tip"><i class="fas fa-mask" style="color:#f472b6;"></i>ถอดหน้ากาก</div>
+    </div>
+
+    <!-- ── Cancel button ── -->
+    <button id="face-cancel-btn" onclick="stopFaceCam()">ยกเลิก</button>
+
   </div>
 </div>
 
@@ -1237,6 +1340,102 @@ async function renderDashBody(dateKey){
   });
   html+=`</div>`;
 
+  // ---- การ์ดแยกตามสถานที่เข้างาน ----
+  {
+    // รวบรวม location จาก records
+    const locMap = {}; // locKey -> { id, name, icon, records[] }
+    records.forEach(r => {
+      const lid  = r.locationId  || '__unknown__';
+      const lnm  = r.locationName|| (r.checkInMethod==='scanner'?'เครื่องสแกนนิ้ว':'ไม่ระบุสถานที่');
+      const isScan = r.checkInMethod === 'scanner';
+      if(!locMap[lid]) locMap[lid] = { id:lid, name:lnm, isScan, records:[] };
+      locMap[lid].records.push(r);
+    });
+
+    const locList = Object.values(locMap);
+    if(locList.length > 0){
+      // palette สี ตาม index
+      const palettes = [
+        { bg:'rgba(0,113,227,.08)',   border:'rgba(0,113,227,.18)',   icon:'#0071e3', iconBg:'rgba(0,113,227,.12)',   badge:'#dbeafe', badgeTxt:'#1e40af' },
+        { bg:'rgba(52,199,89,.08)',   border:'rgba(52,199,89,.18)',   icon:'#1a9e3f', iconBg:'rgba(52,199,89,.12)',   badge:'#dcfce7', badgeTxt:'#166534' },
+        { bg:'rgba(255,159,10,.08)',  border:'rgba(255,159,10,.18)',  icon:'#b36200', iconBg:'rgba(255,159,10,.12)',  badge:'#fef9c3', badgeTxt:'#854d0e' },
+        { bg:'rgba(191,90,242,.08)', border:'rgba(191,90,242,.18)', icon:'#7e3ab5', iconBg:'rgba(191,90,242,.12)', badge:'#f3e8ff', badgeTxt:'#6b21a8' },
+        { bg:'rgba(255,69,58,.08)',   border:'rgba(255,69,58,.18)',   icon:'#d70015', iconBg:'rgba(255,69,58,.12)',   badge:'#fee2e2', badgeTxt:'#991b1b' },
+        { bg:'rgba(90,200,250,.08)',  border:'rgba(90,200,250,.18)',  icon:'#0284c7', iconBg:'rgba(90,200,250,.12)',  badge:'#e0f2fe', badgeTxt:'#075985' },
+      ];
+
+      html += `<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+        <div style="width:28px;height:28px;border-radius:8px;background:rgba(52,199,89,.12);display:flex;align-items:center;justify-content:center;">
+          <i class="fas fa-map-marker-alt" style="font-size:13px;color:#1a9e3f;"></i>
+        </div>
+        <span style="font-size:13px;font-weight:600;color:#1d1d1f;letter-spacing:-0.2px;">แยกตามสถานที่เข้างาน</span>
+        <span style="font-size:11px;color:#86868b;">(${locList.length} สถานที่)</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:20px;">`;
+
+      locList.forEach((loc, idx) => {
+        const pal = palettes[idx % palettes.length];
+        const recs = loc.records;
+        const lateRecs = recs.filter(r => {
+          const emp = db.employees.find(e=>e._key===r.empId)||{dept:r.dept};
+          return checkLate(emp, r.checkInTime, r.locationId).late;
+        });
+        const methodIcon = loc.isScan ? '🖐' : '📍';
+        const methodLabel= loc.isScan ? 'สแกนนิ้ว' : 'GPS / QR';
+
+        // แสดงชื่อพนักงาน สูงสุด 6 คน พร้อม badge มาสาย
+        const MAX_SHOW = 6;
+        const shown = recs.slice(0, MAX_SHOW);
+        const extra = recs.length - MAX_SHOW;
+
+        const empChips = shown.map(r => {
+          const lt = checkLate(db.employees.find(e=>e._key===r.empId)||{dept:r.dept}, r.checkInTime, r.locationId);
+          return `<div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid ${pal.border};border-radius:10px;padding:5px 10px;min-width:0;">
+            <div style="width:7px;height:7px;border-radius:50%;background:${lt.late?'#ff3b30':'#30d158'};flex-shrink:0;"></div>
+            <span style="font-size:12px;font-weight:500;color:#1d1d1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;">${r.empName}</span>
+            <span style="font-size:10px;color:#86868b;flex-shrink:0;">${r.checkInTime}</span>
+            ${lt.late?`<span style="font-size:10px;color:#ff3b30;font-weight:600;flex-shrink:0;">+${lt.minutesLate}น.</span>`:''}
+          </div>`;
+        }).join('');
+
+        const locIdEnc = encodeURIComponent(loc.id);
+        html += `<div onclick="showDashModal('loc','${dateKey}','${locIdEnc}')"
+          style="background:${pal.bg};border:1px solid ${pal.border};border-radius:18px;padding:16px 18px;position:relative;overflow:hidden;cursor:pointer;transition:box-shadow .2s,transform .15s;"
+          onmouseover="this.style.boxShadow='0 6px 24px rgba(0,0,0,.13)';this.style.transform='translateY(-2px)'"
+          onmouseout="this.style.boxShadow='none';this.style.transform='translateY(0)'">
+          <!-- header -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="width:36px;height:36px;border-radius:10px;background:${pal.iconBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px;">${methodIcon}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;color:#1d1d1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${loc.name}</div>
+              <div style="font-size:10px;color:#86868b;margin-top:1px;">${methodLabel}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div style="font-size:26px;font-weight:700;color:${pal.icon};letter-spacing:-1px;line-height:1;">${recs.length}</div>
+              <div style="font-size:10px;color:#86868b;">คน</div>
+            </div>
+          </div>
+          <!-- สถิติ -->
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <span style="background:${pal.badge};color:${pal.badgeTxt};font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;">✅ มา ${recs.length} คน</span>
+            ${lateRecs.length>0?`<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;">⏰ สาย ${lateRecs.length} คน</span>`:''}
+            ${recs.filter(r=>r.checkOutTime).length>0?`<span style="background:#f0fdf4;color:#166534;font-size:11px;padding:3px 9px;border-radius:20px;">🚪ออกแล้ว ${recs.filter(r=>r.checkOutTime).length}</span>`:''}
+          </div>
+          <!-- รายชื่อ -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${empChips}
+            ${extra>0?`<div style="display:flex;align-items:center;justify-content:center;background:#fff;border:1px dashed #c7c7cc;border-radius:10px;padding:5px 12px;font-size:11px;color:#86868b;">+${extra} คน</div>`:''}
+          </div>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid ${pal.border};display:flex;justify-content:flex-end;">
+            <span style="font-size:11px;color:${pal.icon};font-weight:600;">ดูรายชื่อทั้งหมด →</span>
+          </div>
+        </div>`;
+      });
+
+      html += `</div>`;
+    }
+  }
+
   // ---- ตารางเข้างานวันนี้ + ปุ่ม Export Excel ----
   html+=card(`
     <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
@@ -1400,6 +1599,36 @@ window.showDashModal=function(type, dateKey, deptEnc){
       `<span class="badge-yellow px-2 py-0.5 rounded text-xs">${r.otHours} ชม.</span>`,
       `<span class="font-medium text-yellow-700">฿${r.otPay.toLocaleString()}</span>`
     ]);
+  } else if(type==='loc'){
+    const locId = dept; // reuse deptEnc param as locId
+    const locRecs = records.filter(r => (r.locationId||'__unknown__') === locId);
+    const locName = locRecs.length>0 ? (locRecs[0].locationName||(locRecs[0].checkInMethod==='scanner'?'เครื่องสแกนนิ้ว':'ไม่ระบุสถานที่')) : locId;
+    title = `📍 ${locName} — มา ${locRecs.length} คน`;
+    cols = ['ชื่อ-นามสกุล','สายงาน','หัวหน้า','เวลาเข้า','เวลาออก','สถานะ','วิธี','GPS'];
+    rows = locRecs.map(r => {
+      const emp = db.employees.find(e=>e._key===r.empId)||{dept:r.dept};
+      const lt  = checkLate(emp, r.checkInTime, r.locationId);
+      const lateTag = lt.late
+        ? `<span style="background:#fee2e2;color:#991b1b;font-size:10px;font-weight:700;padding:2px 7px;border-radius:12px;">⏰ สาย ${lt.minutesLate}น.</span>`
+        : `<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:600;padding:2px 7px;border-radius:12px;">✅ ตรงเวลา</span>`;
+      const methodTag = r.checkInMethod==='scanner'
+        ? `<span style="background:#f1f5f9;color:#475569;font-size:10px;padding:2px 7px;border-radius:12px;">🖐สแกน</span>`
+        : r.checkInMethod==='face'
+          ? `<span style="background:#f5f3ff;color:#6b21a8;font-size:10px;padding:2px 7px;border-radius:12px;">😊ใบหน้า</span>`
+          : `<span style="background:#eff6ff;color:#1e40af;font-size:10px;padding:2px 7px;border-radius:12px;">📍GPS/QR</span>`;
+      return [
+        `<span style="font-weight:600;color:#1d1d1f;">${r.empName}</span>`,
+        r.dept||'-', r.sup||'-',
+        `<span class="font-mono text-xs ${lt.late?'text-red-600':'text-gray-700'}">${r.checkInTime}</span>`,
+        r.checkOutTime
+          ? `<span class="font-mono text-xs text-gray-700">${r.checkOutTime}</span>`
+          : `<span style="color:#94a3b8;font-size:11px;">ยังไม่ออก</span>`,
+        lateTag, methodTag,
+        r.gpsOk
+          ? `<span style="background:#dcfce7;color:#166534;font-size:10px;padding:2px 7px;border-radius:12px;">✓ ตรงจุด</span>`
+          : `<span style="background:#fee2e2;color:#991b1b;font-size:10px;padding:2px 7px;border-radius:12px;">✗ นอก</span>`
+      ];
+    });
   } else if(type==='dept'){
     const dRecs=records.filter(r=>r.dept===dept);
     const dEmps=db.employees.filter(e=>e.dept===dept);
@@ -3774,8 +4003,20 @@ window.openEmpMod=function(key){
   const e=key?db.employees.find(x=>x._key===key):null;
   const dOpts=db.departments.map(d=>({v:d.name,l:d.name}));
   const sOpts=db.supervisors.map(s=>({v:s._key+'|'+s.name,l:s.name+' ('+s.dept+')'}));
+  const curEmpId = e?.empId || e?.employeeId || '';
   openModal(e?'แก้ไขพนักงาน':'เพิ่มพนักงานใหม่',`<div class="grid grid-cols-2 gap-3">
     <div class="col-span-2"><label class="text-xs font-medium text-gray-600 block mb-1">ชื่อ-นามสกุล *</label>${Inp('m-en','text',e?.name,'')}</div>
+    <div>
+      <label class="text-xs font-medium text-gray-600 block mb-1">รหัสพนักงาน
+        <span style="background:#dbeafe;color:#1e40af;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">สำหรับสแกนนิ้ว</span>
+      </label>
+      <input id="m-empid" type="text" value="${curEmpId}"
+        placeholder="เช่น 001, 042"
+        style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;font-family:monospace;letter-spacing:1px;"
+        onfocus="this.style.borderColor='#0071e3';this.style.boxShadow='0 0 0 3px rgba(0,113,227,.12)'"
+        onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
+      <div style="font-size:10px;color:#86868b;margin-top:3px;">ต้องตรงกับ ID ในเครื่องสแกนนิ้ว (จะถูก normalize อัตโนมัติ)</div>
+    </div>
     <div><label class="text-xs font-medium text-gray-600 block mb-1">เบอร์โทร</label>${Inp('m-ep','text',e?.phone,'')}</div>
     <div><label class="text-xs font-medium text-gray-600 block mb-1">ค่าแรง/วัน (฿)</label>${Inp('m-ew','number',e?.wage||db.wage.defaultWage,'')}</div>
     <div><label class="text-xs font-medium text-gray-600 block mb-1">OT ส่วนตัว (฿/ชม.)</label>${Inp('m-eot','number',e?.otRate||getEffectiveOTRate(e||{dept:''}),'')}</div>
@@ -3794,22 +4035,32 @@ window.saveEmp=async function(){
   const [sId,sNm]=sv.split('|');
   const u=document.getElementById('m-eu').value.trim(),pw=document.getElementById('m-epwd').value.trim();
   const ekey=document.getElementById('m-eid').value;
+  // empId: normalize ตัดเลขนำหน้า 0 เหมือน scanner (แต่เก็บ string ต้นฉบับไว้ด้วย)
+  const rawEmpId = (document.getElementById('m-empid')?.value||'').trim();
+  const empId = rawEmpId; // เก็บค่าที่กรอก (เช่น "042") ไม่บังคับ normalize
   if(!n)return alert('กรุณากรอกชื่อ');
   if(!ekey){
     if(!u||!pw){alert('กรุณากรอก Username และ Password');return;}
     if(db.employees.find(e=>e.username===u)){alert('Username นี้ถูกใช้แล้ว');return;}
+  }
+  // ตรวจ empId ซ้ำ (ยกเว้นคนเดิม)
+  if(empId){
+    const dup = db.employees.find(e => e._key!==ekey && (e.empId===empId || e.employeeId===empId));
+    if(dup){ alert(`รหัสพนักงาน "${empId}" ถูกใช้โดย ${dup.name} แล้ว`); return; }
   }
   showSync();
   if(ekey){
     const upd={name:n,phone:ph,wage:w,dept:d,sup:sNm,supId:sId,username:u};
     if(ot>0)upd.otRate=ot;
     if(pw)upd.password=pw;
+    if(empId) upd.empId=empId; else upd.empId=null; // ลบถ้าลบค่าออก
     await fbPatch(`/employees/${ekey}`,upd);
     const idx=db.employees.findIndex(x=>x._key===ekey);
     if(idx>=0)db.employees[idx]={...db.employees[idx],...upd};
   } else {
     const rec={name:n,phone:ph,dept:d,sup:sNm,supId:sId,wage:w,username:u,password:pw};
     if(ot>0)rec.otRate=ot;
+    if(empId)rec.empId=empId;
     const res=await fbPush('/employees',rec);
     db.employees.push({_key:res.name,...rec});
   }
@@ -8030,32 +8281,71 @@ function setFaceStatus(type, msg) {
   const el = document.getElementById('face-status');
   if (!el) return;
   const s = {
-    success: 'background:#dcfce7;color:#166534;',
-    error:   'background:#fee2e2;color:#991b1b;',
-    warn:    'background:#fef9c3;color:#854d0e;',
-    info:    'background:#dbeafe;color:#1e40af;'
+    success: 'background:rgba(5,46,22,.7);color:#4ade80;border:1px solid rgba(34,197,94,.3);',
+    error:   'background:rgba(69,10,10,.7);color:#f87171;border:1px solid rgba(239,68,68,.3);',
+    warn:    'background:rgba(69,42,0,.7);color:#fbbf24;border:1px solid rgba(245,158,11,.3);',
+    info:    'background:#0f1926;color:#60a5fa;border:1px solid rgba(59,130,246,.2);'
   };
-  el.style.cssText = `margin-top:14px;padding:12px 16px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;transition:all .3s;${s[type]||s.info}`;
-  el.innerHTML = type==='info' ? `<i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>${msg}` : msg;
+  el.style.cssText = `padding:12px 16px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;line-height:1.5;transition:all .3s;${s[type]||s.info}`;
+  if(type==='info'){
+    el.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;gap:6px;"><i class="fas fa-circle-notch fa-spin" style="font-size:11px;opacity:.7;"></i><span>${msg}</span></div>`;
+  } else {
+    el.innerHTML = msg;
+  }
 }
 function setFaceRing(color) {
   const r = document.getElementById('face-ring');
   if (!r) return;
-  const colorMap = { green:'#22c55e', red:'#ef4444', yellow:'#eab308', blue:'#22d3ee', gray:'#475569' };
+  const colorMap = { green:'#22c55e', red:'#ef4444', yellow:'#f59e0b', blue:'#22d3ee', gray:'#475569' };
   const hex = colorMap[color] || colorMap.blue;
   r.style.borderColor = hex;
   r.classList.toggle('face-ring-pulse', color !== 'green' && color !== 'red');
-  // Glow class
   r.classList.remove('green','red','yellow');
-  if (color === 'green' || color === 'red' || color === 'yellow') r.classList.add(color);
-  // Sync radar line color
+  if (color==='green'||color==='red'||color==='yellow') r.classList.add(color);
+  // Sync corner brackets color
+  ['fc-tl','fc-tr','fc-bl','fc-br'].forEach(id => {
+    const c = document.getElementById(id); if(c) c.style.borderColor = hex;
+  });
+  // Sync radar
   const radar = document.getElementById('face-radar-line');
   const glow  = document.getElementById('face-radar-glow');
-  if (radar) {
-    radar.style.background = `linear-gradient(90deg,transparent 0%,${hex} 20%,${hex}dd 50%,${hex} 80%,transparent 100%)`;
-    radar.style.filter = `drop-shadow(0 0 8px ${hex})`;
+  if (radar) { radar.style.background=`linear-gradient(90deg,transparent,${hex} 20%,${hex}cc 50%,${hex} 80%,transparent)`; radar.style.filter=`drop-shadow(0 0 6px ${hex})`; }
+  if (glow)  glow.style.background=`linear-gradient(180deg,${hex}1e 0%,transparent 100%)`;
+}
+
+// ---- Update registration step indicators ----
+function _updateFaceRegSteps(step) {
+  for(let i=0;i<3;i++){
+    const dot = document.getElementById(`frs-${i}`);
+    const lbl = document.getElementById(`frs-lbl-${i}`);
+    const line= document.getElementById(`frs-line-${i}`);
+    if(!dot) continue;
+    dot.classList.remove('active','done');
+    lbl.classList.remove('active','done');
+    if(line) line.classList.remove('done');
+    if(i < step){ dot.innerHTML=['✅','✅','✅'][i]; dot.classList.add('done'); lbl.classList.add('done'); if(line) line.classList.add('done'); }
+    else if(i===step){ dot.innerHTML=['😐','◀','▶'][i]; dot.classList.add('active'); lbl.classList.add('active'); }
+    else { dot.innerHTML=['😐','◀','▶'][i]; }
   }
-  if (glow) glow.style.background = `linear-gradient(180deg,${hex}28 0%,transparent 100%)`;
+}
+// ---- Show/hide name badge on camera ----
+function _setFaceNameBadge(text, style) {
+  const b = document.getElementById('face-name-badge');
+  if(!b) return;
+  if(!text){ b.style.display='none'; return; }
+  b.style.display='block';
+  b.className = style==='green'?'green-badge':style==='red'?'red-badge':'';
+  b.innerHTML = text;
+}
+// ---- Update confidence bar ----
+function _setFaceConfBar(pct, show) {
+  const w = document.getElementById('face-conf-bar-wrap');
+  const f = document.getElementById('face-conf-bar-fill');
+  const p = document.getElementById('face-conf-pct');
+  if(!w) return;
+  w.style.display = show ? 'block' : 'none';
+  if(show && f){ f.style.width = Math.min(100,pct)+'%'; }
+  if(show && p){ p.textContent = Math.min(100,Math.round(pct))+'%'; }
 }
 
 // Open face modal — REGISTER mode (admin/supervisor)
@@ -8064,9 +8354,12 @@ window.openFaceRegister = async function(empKey) {
   if (!emp) return;
   faceModalMode = 'register';  // admin always allowed
   faceRegEmpKey = empKey;
-  document.getElementById('face-modal-title').textContent = 'ลงทะเบียนใบหน้า';
-  document.getElementById('face-modal-sub').textContent = `${emp.name} · ${emp.dept||'-'} (Admin)`;
+  document.getElementById('face-modal-title').textContent = '📷 ลงทะเบียนใบหน้า';
+  document.getElementById('face-modal-sub').textContent = `${emp.name} · ${emp.dept||'-'} · ผู้ดูแลระบบ`;
   document.getElementById('face-scan-overlay').style.display = 'none';
+  document.getElementById('face-reg-steps').style.display = 'block';
+  document.getElementById('face-conf-bar-wrap').style.display = 'none';
+  _updateFaceRegSteps(0);
   document.getElementById('face-modal').classList.add('active');
   setFaceStatus('info', 'กำลังเปิดกล้อง...');
   await _startFaceCam();
@@ -8075,9 +8368,12 @@ window.openFaceRegister = async function(empKey) {
 // Open face modal — CHECK-IN mode (employee)
 window.openFaceScan = async function() {
   faceModalMode = 'checkin';
-  document.getElementById('face-modal-title').textContent = 'สแกนใบหน้าเข้างาน';
-  document.getElementById('face-modal-sub').textContent = 'จ่อใบหน้าให้อยู่ในกรอบ';
+  document.getElementById('face-modal-title').textContent = '🟢 สแกนใบหน้าเข้างาน';
+  document.getElementById('face-modal-sub').textContent = 'จ่อหน้าตรงกล้อง ห่าง 30-50 ซม.';
   document.getElementById('face-scan-overlay').style.display = 'none';
+  document.getElementById('face-reg-steps').style.display = 'none';
+  document.getElementById('face-conf-bar-wrap').style.display = 'none';
+  _setFaceNameBadge(null);
   document.getElementById('face-modal').classList.add('active');
   setFaceStatus('info', 'กำลังเปิดกล้อง...');
   await _startFaceCam();
@@ -8086,9 +8382,12 @@ window.openFaceScan = async function() {
 // Open face modal — CHECK-OUT mode
 window.openFaceScanCheckout = async function() {
   faceModalMode = 'checkout';
-  document.getElementById('face-modal-title').textContent = 'สแกนใบหน้าออกงาน';
-  document.getElementById('face-modal-sub').textContent = 'จ่อใบหน้าให้อยู่ในกรอบ';
+  document.getElementById('face-modal-title').textContent = '🔴 สแกนใบหน้าออกงาน';
+  document.getElementById('face-modal-sub').textContent = 'จ่อหน้าตรงกล้อง ห่าง 30-50 ซม.';
   document.getElementById('face-scan-overlay').style.display = 'none';
+  document.getElementById('face-reg-steps').style.display = 'none';
+  document.getElementById('face-conf-bar-wrap').style.display = 'none';
+  _setFaceNameBadge(null);
   document.getElementById('face-modal').classList.add('active');
   setFaceStatus('info', 'กำลังเปิดกล้อง...');
   await _startFaceCam();
@@ -8377,13 +8676,13 @@ async function _faceDetectLoop() {
     _faceRegBuf.push(descriptor);
     const pct = Math.round((_faceRegBuf.length / REG_STEP_FRAMES) * 100);
     setFaceRing(_faceRegBuf.length >= REG_STEP_FRAMES ? 'green' : 'blue');
+    _updateFaceRegSteps(_regStep);
     setFaceStatus('info',
-      `<span style="font-size:22px;">${curStep.icon}</span>
-       <div style="font-size:13px;font-weight:700;color:${curStep.color};margin:4px 0 2px;">${curStep.en}</div>
-       <div style="background:#1e293b;border-radius:8px;height:10px;margin:8px 0 4px;overflow:hidden;">
-         <div style="background:${curStep.color};height:100%;width:${pct}%;transition:width .2s;border-radius:8px;"></div>
+      `<span style="font-size:14px;font-weight:700;color:${curStep.color};">${curStep.icon} ${curStep.en}</span>
+       <div style="background:#0f1926;border-radius:6px;height:8px;margin:8px 0 2px;overflow:hidden;">
+         <div style="background:${curStep.color};height:100%;width:${pct}%;transition:width .2s;border-radius:6px;"></div>
        </div>
-       <span style="font-size:11px;color:#94a3b8;">${_faceRegBuf.length}/${REG_STEP_FRAMES} เฟรม</span>`);
+       <span style="font-size:10px;color:#475569;">เก็บตัวอย่าง ${_faceRegBuf.length}/${REG_STEP_FRAMES}</span>`);
 
     if (_faceRegBuf.length < REG_STEP_FRAMES) {
       await new Promise(r => setTimeout(r, 80));
@@ -8401,19 +8700,24 @@ async function _faceDetectLoop() {
     if (_regStep < 2) {
       // Next step
       _regStep++;
+      _updateFaceRegSteps(_regStep);
       setFaceRing('green');
       const nextStep = stepLabels[_regStep];
       setFaceStatus('success',
-        `✅ ${stepLabels[_regStep-1].th} — บันทึกแล้ว!<br>
-         <span style="font-size:13px;color:${nextStep.color};font-weight:700;">→ ต่อไป: ${nextStep.th} ${nextStep.icon}</span>`);
-      await new Promise(r => setTimeout(r, 800));
+        `<div style="font-size:22px;margin-bottom:4px;">✅</div>
+         <div style="font-weight:700;">${stepLabels[_regStep-1].th} — บันทึกแล้ว!</div>
+         <div style="font-size:12px;color:#60a5fa;margin-top:4px;">ถัดไป: ${nextStep.icon} ${nextStep.th}</div>`);
+      await new Promise(r => setTimeout(r, 900));
       if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
       return;
     }
 
-    // All 3 steps done — compute final combined descriptor = average of 3 step means
+    // All 3 steps done
     faceDetecting = false;
-    const finalDesc = _computeMeanDescriptor(_regStepDescs); // 1 combined descriptor
+    _updateFaceRegSteps(3); // mark all done
+    setFaceRing('green');
+    setFaceStatus('success','<div style="font-size:22px;margin-bottom:4px;">🎉</div><div>เก็บตัวอย่างครบทั้ง 3 มุมแล้ว!</div><div style="font-size:11px;margin-top:4px;opacity:.8;">กำลังบันทึก...</div>');
+    const finalDesc = _computeMeanDescriptor(_regStepDescs);
     _regStepDescs = [];
     _regStep = 0;
     await _handleFaceRegisterMulti([finalDesc]);
@@ -8436,12 +8740,14 @@ async function _faceDetectLoop() {
 
   if (!matched) {
     _faceConfirmBuf = [];
+    _setFaceNameBadge(null);
+    _setFaceConfBar(0, false);
     setFaceRing('red');
     const hasAny = db.employees.some(e => (e.faceDescriptors?.length > 0) || e.faceDescriptor);
     setFaceStatus('error',
       hasAny
-        ? `❌ ไม่รู้จักใบหน้านี้<br><span style="font-size:11px;">กรุณาลงทะเบียนใบหน้าก่อน หรือขอให้ HR ลงทะเบียนให้</span>`
-        : `❌ ยังไม่มีพนักงานลงทะเบียนใบหน้าในระบบ`);
+        ? `<div style="font-size:22px;margin-bottom:4px;">😕</div><div>ไม่รู้จักใบหน้านี้</div><div style="font-size:11px;margin-top:4px;opacity:.7;">ขยับหน้าเข้า-ออก หรือแจ้ง HR ลงทะเบียน</div>`
+        : `<div style="font-size:22px;margin-bottom:4px;">⚠️</div>ยังไม่มีพนักงานลงทะเบียนใบหน้าในระบบ`);
     await new Promise(r => setTimeout(r, 600));
     if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
     return;
@@ -8462,20 +8768,22 @@ async function _faceDetectLoop() {
 
   if (!confirmed) {
     setFaceRing('blue');
+    const isCheckin = faceModalMode === 'checkin';
+    _setFaceNameBadge(`👤 ${matched.emp.name}`, '');
+    _setFaceConfBar(confidence, true);
     setFaceStatus('info',
-      `👤 พบ: <strong>${matched.emp.name}</strong><br>
-       <div style="background:#dcfce7;border-radius:6px;height:8px;margin:8px 0 4px;overflow:hidden;">
-         <div style="background:#16a34a;height:100%;width:${pct}%;transition:width .15s;border-radius:6px;"></div>
-       </div>
-       <span style="font-size:11px;color:#15803d;">ยืนยัน ${_faceConfirmBuf.length}/${FACE_CONFIRM_FRAMES} เฟรม · ความมั่นใจ ${confidence}%</span>`);
+      `<span style="font-weight:700;">${isCheckin?'🟢':'🔴'} ${matched.emp.name}</span>
+       <span style="font-size:11px;color:#475569;margin-left:6px;">${matched.emp.dept||''}</span>`);
     await new Promise(r => setTimeout(r, 100));
     if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
     return;
   }
 
-  // ✅ Confirmed — average the confirmed descriptors for final match
+  // ✅ Confirmed
   setFaceRing('green');
-  const avgDesc = _computeMeanDescriptor(_faceConfirmBuf.map(() => descriptor)); // last descriptor (all same person)
+  _setFaceNameBadge(`✅ ${matched.emp.name}`, 'green');
+  _setFaceConfBar(confidence, true);
+  const avgDesc = _computeMeanDescriptor(_faceConfirmBuf.map(() => descriptor));
   _faceConfirmBuf = [];
   faceDetecting = false;
 
@@ -9092,14 +9400,24 @@ window.stopFaceCam = function() {
   if (faceRafHandle) { cancelAnimationFrame(faceRafHandle); faceRafHandle = null; }
   if (faceStream) { faceStream.getTracks().forEach(t => t.stop()); faceStream = null; }
   document.getElementById('face-modal').classList.remove('active');
+  // Reset UI state
+  _setFaceNameBadge(null);
+  _setFaceConfBar(0, false);
+  const rs = document.getElementById('face-reg-steps'); if(rs) rs.style.display='none';
+  const sov = document.getElementById('face-scan-overlay'); if(sov) sov.style.display='none';
+  const spov = document.getElementById('face-spoof-overlay'); if(spov) spov.style.display='none';
+  setFaceRing('blue');
 };
 
 // Supervisor opens face cam to scan employees in for their team
 window.openFaceScanSupervisor = async function() {
-  faceModalMode = 'checkin';  // supervisor scans = check-in on behalf
-  document.getElementById('face-modal-title').textContent = 'สแกนใบหน้าเข้างาน';
-  document.getElementById('face-modal-sub').textContent = 'จ่อกล้องให้ใบหน้าพนักงานอยู่ในกรอบ';
+  faceModalMode = 'checkin';
+  document.getElementById('face-modal-title').textContent = '🟢 สแกนใบหน้าเข้างาน';
+  document.getElementById('face-modal-sub').textContent = 'หัวหน้าสแกนแทนลูกน้อง';
   document.getElementById('face-scan-overlay').style.display = 'none';
+  document.getElementById('face-reg-steps').style.display = 'none';
+  document.getElementById('face-conf-bar-wrap').style.display = 'none';
+  _setFaceNameBadge(null);
   document.getElementById('face-modal').classList.add('active');
   setFaceStatus('info', 'กำลังเปิดกล้อง...');
   await _startFaceCam();
@@ -9162,25 +9480,48 @@ async function pgCheckinSettings() {
   const el = document.getElementById('cis-body'); if (!el) return;
 
   const faceCount = db.employees.filter(e => e.faceDescriptor).length;
+  const total = db.employees.length;
+  const pct = total ? Math.round(faceCount/total*100) : 0;
 
   el.innerHTML = `
-    <div class="max-w-3xl mx-auto">
-      ${card(`${sHead('ลงทะเบียนใบหน้าพนักงาน',`<span class="text-xs text-gray-400">${faceCount}/${db.employees.length} คน</span>`)}
-        <div class="mb-3 p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700">
-          <i class="fas fa-info-circle mr-1"></i>
-          คลิก <strong>ลงทะเบียนใบหน้า</strong> แล้วจ่อกล้องให้ใบหน้าพนักงานอยู่ในกรอบ ระบบจะบันทึก Face Descriptor (128 มิติ) ลง Firebase โดยอัตโนมัติ
+  <div class="max-w-4xl mx-auto">
+    <!-- Header summary -->
+    <div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);border-radius:20px;padding:22px 24px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+      <div>
+        <div style="color:#fff;font-size:18px;font-weight:800;margin-bottom:4px;">
+          <i class="fas fa-id-badge" style="margin-right:8px;opacity:.9;"></i>ลงทะเบียนใบหน้าพนักงาน
         </div>
-        <input type="text" id="face-reg-search" placeholder="ค้นหาชื่อ, สายงาน..." class="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-1" oninput="filterFaceRegTable(this.value)">
-        <div class="overflow-x-auto max-h-[70vh]">
-          <table class="min-w-full text-sm">
-            ${THead('พนักงาน','สายงาน','หัวหน้างาน','ใบหน้า','ครั้ง','จัดการ')}
-            <tbody id="face-reg-tbody">
-              ${_buildFaceRegRows(db.employees)}
-            </tbody>
-          </table>
+        <div style="color:rgba(255,255,255,.75);font-size:12px;">AI Face Recognition · ประมวลผลในเครื่อง 100%</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="text-align:center;">
+          <div style="font-size:28px;font-weight:900;color:#fff;">${faceCount}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.6);">ลงทะเบียนแล้ว</div>
         </div>
-      `)}
-    </div>`;
+        <div style="width:52px;height:52px;border-radius:50%;background:conic-gradient(#22c55e ${pct*3.6}deg,rgba(255,255,255,.2) 0deg);display:flex;align-items:center;justify-content:center;">
+          <div style="width:40px;height:40px;border-radius:50%;background:#4c1d95;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;">${pct}%</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:28px;font-weight:900;color:rgba(255,255,255,.5);">${total-faceCount}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.45);">ยังไม่ลงทะเบียน</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search + filter -->
+    <div style="background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.06);display:flex;gap:10px;align-items:center;">
+      <i class="fas fa-search" style="color:#94a3b8;font-size:14px;"></i>
+      <input type="text" id="face-reg-search" placeholder="ค้นหาชื่อ, สายงาน..."
+        style="flex:1;border:none;outline:none;font-size:13px;color:#1e293b;background:transparent;font-family:Sarabun,sans-serif;"
+        oninput="filterFaceRegTable(this.value)">
+      <div style="font-size:11px;color:#94a3b8;" id="face-reg-count">${total} คน</div>
+    </div>
+
+    <!-- Card grid -->
+    <div id="face-reg-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+      ${_buildFaceRegCards(db.employees)}
+    </div>
+  </div>`;
 }
 
 window.previewCIMode = function(val) { checkinMode = val; };
@@ -9232,79 +9573,64 @@ async function pgEmpFaceReg() {
   const hasFace   = Array.isArray(emp.faceDescriptor) && emp.faceDescriptor.length === 128;
   const canReg    = !locked && regCount < FACE_REG_MAX;
 
-  mc.innerHTML = `<div class="max-w-sm mx-auto mt-2 space-y-4">
+  const descsN = (emp.faceDescriptors||[]).filter(d=>Array.isArray(d)&&d.length===128).length;
+  mc.innerHTML = `<div style="max-width:400px;margin:0 auto;padding:0 2px;">
 
-    <!-- Status card -->
-    <div style="background:#fff;border-radius:20px;box-shadow:0 2px 12px rgba(0,0,0,.07);overflow:hidden;">
-      <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:24px;text-align:center;color:#fff;">
-        <div style="font-size:40px;margin-bottom:8px;">${hasFace ? '😊' : '🤔'}</div>
-        <div style="font-size:18px;font-weight:700;">${hasFace ? 'ลงทะเบียนใบหน้าแล้ว' : 'ยังไม่ได้ลงทะเบียนใบหน้า'}</div>
-        <div style="font-size:12px;opacity:.8;margin-top:4px;">${emp.name}</div>
+    <!-- Hero card -->
+    <div style="background:linear-gradient(145deg,#0f172a,#1e1b4b);border-radius:24px;overflow:hidden;margin-bottom:14px;box-shadow:0 4px 24px rgba(0,0,0,.15);">
+      <!-- Top gradient header -->
+      <div style="background:${hasFace?'linear-gradient(135deg,#065f46,#047857)':'linear-gradient(135deg,#1e3a5f,#1e40af)'};padding:28px 24px 22px;text-align:center;">
+        <div style="width:72px;height:72px;border-radius:50%;background:${hasFace?'rgba(34,197,94,.2)':'rgba(255,255,255,.1)'};border:3px solid ${hasFace?'rgba(34,197,94,.6)':'rgba(255,255,255,.3)'};display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px;">${hasFace?'😊':'🤔'}</div>
+        <div style="color:#fff;font-size:17px;font-weight:800;">${hasFace?'ลงทะเบียนใบหน้าแล้ว ✅':'ยังไม่ได้ลงทะเบียนใบหน้า'}</div>
+        <div style="color:rgba(255,255,255,.65);font-size:12px;margin-top:4px;">${emp.name}${hasFace?` · เก็บ ${descsN} ตัวอย่าง`:''}</div>
       </div>
-
-      <div style="padding:20px;">
-        <!-- Counter -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <div style="font-size:13px;color:#64748b;">จำนวนครั้งที่ลงทะเบียน</div>
-          <div style="display:flex;gap:6px;">
-            ${[0,1,2].map(i => `
-              <div style="width:28px;height:28px;border-radius:50%;background:${i < regCount ? '#7c3aed' : '#f1f5f9'};display:flex;align-items:center;justify-content:center;">
-                ${i < regCount ? '<i class="fas fa-check" style="color:#fff;font-size:11px;"></i>' : `<span style="font-size:11px;color:#94a3b8;">${i+1}</span>`}
-              </div>`).join('')}
-          </div>
+      <!-- Counter row -->
+      <div style="padding:18px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06);">
+        <div style="color:#94a3b8;font-size:12px;">ครั้งที่ลงทะเบียน</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${[0,1,2].map(i=>`<div style="width:32px;height:32px;border-radius:50%;
+            background:${i<regCount?'linear-gradient(135deg,#7c3aed,#6d28d9)':'rgba(255,255,255,.08)'};
+            border:2px solid ${i<regCount?'#7c3aed':'rgba(255,255,255,.15)'};
+            display:flex;align-items:center;justify-content:center;font-size:12px;color:${i<regCount?'#fff':'#475569'};font-weight:700;">
+            ${i<regCount?'✓':(i+1)}</div>`).join('')}
         </div>
-
-        <!-- Status message -->
-        ${locked ? `
-          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
-            <i class="fas fa-lock" style="color:#dc2626;margin-right:6px;"></i>
-            <span style="color:#991b1b;font-weight:700;font-size:13px;">ถูกล็อค — รอแอดมินปลดล็อค</span>
-            <div style="font-size:11px;color:#b91c1c;margin-top:6px;">ใช้ครบ ${FACE_REG_MAX} ครั้งแล้ว กรุณาติดต่อ HR เพื่อรีเซ็ต</div>
-          </div>` :
-         regCount >= FACE_REG_MAX ? `
-          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
-            <i class="fas fa-exclamation-triangle" style="color:#c2410c;margin-right:6px;"></i>
-            <span style="color:#c2410c;font-weight:700;font-size:13px;">ใช้ครบจำนวนที่กำหนดแล้ว</span>
-            <div style="font-size:11px;color:#c2410c;margin-top:4px;">ติดต่อ HR เพื่อขอปลดล็อค</div>
-          </div>` :
-         regCount > 0 ? `
-          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin-bottom:14px;text-align:center;font-size:12px;color:#15803d;">
-            เหลืออีก <strong>${FACE_REG_MAX - regCount}</strong> ครั้ง ใช้ได้เมื่อใบหน้าจำไม่ถูกต้อง
-          </div>` : `
-          <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:12px;padding:12px;margin-bottom:14px;text-align:center;font-size:12px;color:#6d28d9;">
-            <i class="fas fa-info-circle mr-1"></i> ลงทะเบียนได้สูงสุด ${FACE_REG_MAX} ครั้ง เพื่อความปลอดภัย
-          </div>`}
-
-        <!-- Register button -->
-        ${canReg ? `
-          <button onclick="openEmpFaceScan()" id="btn-emp-face-reg"
-            style="width:100%;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:16px;padding:18px;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Sarabun,sans-serif;box-shadow:0 4px 16px rgba(124,58,237,.3);transition:opacity .15s;"
-            onmousedown="this.style.opacity='.85'" onmouseup="this.style.opacity='1'">
-            <i class="fas fa-camera" style="font-size:20px;"></i>
-            ${hasFace ? 'ลงทะเบียนใบหน้าใหม่' : 'เริ่มลงทะเบียนใบหน้า'}
-          </button>` : `
-          <button disabled
-            style="width:100%;background:#e5e7eb;color:#9ca3af;border:none;border-radius:16px;padding:18px;font-size:15px;font-weight:700;cursor:not-allowed;display:flex;align-items:center;justify-content:center;gap:10px;font-family:Sarabun,sans-serif;">
-            <i class="fas fa-${locked ? 'lock' : 'ban'}"></i>
-            ${locked ? 'ถูกล็อค' : 'ครบจำนวนแล้ว'}
-          </button>`}
+      </div>
+      <!-- Status message -->
+      <div style="padding:14px 24px;">
+        ${locked?`<div style="background:rgba(220,38,38,.15);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:12px;text-align:center;color:#f87171;font-size:13px;font-weight:700;"><i class="fas fa-lock mr-2"></i>ถูกล็อค — ติดต่อ HR ปลดล็อค</div>`:
+          regCount>=FACE_REG_MAX?`<div style="background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.3);border-radius:12px;padding:12px;text-align:center;color:#fbbf24;font-size:13px;font-weight:700;"><i class="fas fa-exclamation-triangle mr-2"></i>ใช้ครบ ${FACE_REG_MAX} ครั้งแล้ว</div>`:
+          `<div style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.25);border-radius:12px;padding:10px 14px;text-align:center;color:#a78bfa;font-size:12px;">เหลืออีก <strong>${FACE_REG_MAX-regCount}</strong> ครั้ง · ใช้เมื่อระบบจำใบหน้าไม่ได้</div>`}
       </div>
     </div>
 
-    <!-- How to guide -->
-    <div style="background:#fff;border-radius:16px;padding:18px;box-shadow:0 1px 6px rgba(0,0,0,.05);">
-      <div style="font-weight:700;color:#1e293b;margin-bottom:12px;font-size:13px;">
-        <i class="fas fa-shield-alt" style="color:#7c3aed;margin-right:6px;"></i>วิธีลงทะเบียนใบหน้าให้แม่นยำ
+    <!-- Register button -->
+    ${canReg?`
+    <button onclick="openEmpFaceScan()" id="btn-emp-face-reg"
+      style="width:100%;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:18px;padding:18px;font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Sarabun,sans-serif;box-shadow:0 6px 20px rgba(124,58,237,.35);transition:opacity .15s;margin-bottom:14px;"
+      onmousedown="this.style.opacity='.8'" onmouseup="this.style.opacity='1'">
+      <i class="fas fa-camera" style="font-size:20px;"></i>
+      ${hasFace?'📷 ลงทะเบียนใหม่':'📷 เริ่มลงทะเบียนใบหน้า'}
+    </button>`:`
+    <button disabled style="width:100%;background:#e5e7eb;color:#9ca3af;border:none;border-radius:18px;padding:18px;font-size:15px;font-weight:700;cursor:not-allowed;display:flex;align-items:center;justify-content:center;gap:10px;font-family:Sarabun,sans-serif;margin-bottom:14px;">
+      <i class="fas fa-${locked?'lock':'ban'}"></i>${locked?'ถูกล็อค':'ครบจำนวนแล้ว'}</button>`}
+
+    <!-- How-to steps -->
+    <div style="background:#fff;border-radius:18px;padding:18px;box-shadow:0 1px 8px rgba(0,0,0,.06);">
+      <div style="font-weight:800;color:#0f172a;margin-bottom:14px;font-size:13px;display:flex;align-items:center;gap:8px;">
+        <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#6d28d9);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas fa-shield-alt" style="color:#fff;font-size:12px;"></i>
+        </div>วิธีลงทะเบียนให้แม่นยำ 3 มุม
       </div>
-      ${['อยู่ในที่ที่มีแสงสว่างเพียงพอ ไม่มีแสงย้อนหลัง','จ่อใบหน้าให้ตรงกล้อง ห่างประมาณ 30-50 ซม.','ถอดหน้ากากและแว่นกันแดดออก','ระบบจะเก็บตัวอย่าง 5 เฟรมอัตโนมัติ — อยู่นิ่งๆ','ระบบใช้ค่าเฉลี่ย 5 เฟรมเพื่อความแม่นยำสูงสุด'].map((t,i) =>
-        `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f8fafc;">
-          <div style="width:22px;height:22px;border-radius:50%;background:#f5f3ff;color:#7c3aed;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
-          <div style="font-size:12px;color:#475569;line-height:1.5;">${t}</div>
-        </div>`).join('')}
-      <div style="margin-top:10px;background:#fef9c3;border-radius:10px;padding:10px 12px;font-size:11px;color:#854d0e;">
-        <i class="fas fa-lock" style="margin-right:4px;"></i>
-        ลงทะเบียนได้สูงสุด ${FACE_REG_MAX} ครั้ง ป้องกันการเปลี่ยนข้อมูลโดยไม่ได้รับอนุญาต
-      </div>
+      ${[
+        {icon:'💡',txt:'มีแสงสว่างเพียงพอ ไม่มีแสงย้อนหลัง'},
+        {icon:'📏',txt:'จ่อใบหน้าห่างกล้องประมาณ 30-50 ซม.'},
+        {icon:'😐',txt:'มองตรงกล้อง → หันซ้าย → หันขวา (ระบบแนะนำอัตโนมัติ)'},
+        {icon:'🚫',txt:'ถอดหน้ากาก แว่นกันแดดออก ผมไม่บังหน้า'},
+        {icon:'🔒',txt:'ลงทะเบียนได้สูงสุด ' + FACE_REG_MAX + ' ครั้ง ป้องกันการทุจริต'},
+      ].map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;${i<4?'border-bottom:1px solid #f1f5f9':''}">
+        <div style="font-size:18px;width:28px;text-align:center;flex-shrink:0;">${s.icon}</div>
+        <div style="font-size:12px;color:#475569;line-height:1.55;">${s.txt}</div>
+      </div>`).join('')}
     </div>
   </div>`;
 }
@@ -9321,9 +9647,12 @@ window.openEmpFaceScan = async function() {
   }
   faceModalMode = 'emp-register';
   faceRegEmpKey = CU.id;
-  document.getElementById('face-modal-title').textContent = 'ลงทะเบียนใบหน้าของคุณ';
+  document.getElementById('face-modal-title').textContent = '📷 ลงทะเบียนใบหน้า';
   document.getElementById('face-modal-sub').textContent = `ครั้งที่ ${regCount + 1} / ${FACE_REG_MAX} · ${emp.name}`;
   document.getElementById('face-scan-overlay').style.display = 'none';
+  document.getElementById('face-reg-steps').style.display = 'block';
+  document.getElementById('face-conf-bar-wrap').style.display = 'none';
+  _updateFaceRegSteps(0);
   document.getElementById('face-modal').classList.add('active');
   setFaceStatus('info', 'กำลังเปิดกล้อง...');
   await _startFaceCam();
@@ -9582,39 +9911,66 @@ window.adminDoCheckInFor = async function(dateKey) {
   alert(`✅ เช็คชื่อให้ ${emp.name} สำเร็จ · เวลาเข้า ${inT}${outT?' · ออก '+outT:''}`);
 };
 
-// ---- Face registration table helpers ----
-function _buildFaceRegRows(emps) {
-  return emps.map(e => `<tr class="hover:bg-gray-50">
-    <td class="px-4 py-2.5 font-medium">${e.name}</td>
-    <td class="px-4 py-2.5 text-gray-500 text-xs">${e.dept||'-'}</td>
-    <td class="px-4 py-2.5 text-gray-500 text-xs">${e.sup||'-'}</td>
-    <td class="px-4 py-2.5">${e.faceDescriptor ? bdg('green','✓ ลงทะเบียนแล้ว') : bdg('red','ยังไม่ได้ลงทะเบียน')}</td>
-    <td class="px-4 py-2.5">
-      <div class="flex items-center gap-1">
-        <span class="text-xs font-bold ${(e.faceRegCount||0) >= FACE_REG_MAX ? 'text-red-500' : 'text-gray-600'}">${e.faceRegCount||0}/${FACE_REG_MAX}</span>
-        ${e.faceRegLocked ? '<i class="fas fa-lock text-red-500 text-xs ml-1"></i>' : ''}
+// ---- Face registration card helpers ----
+function _buildFaceRegCards(emps) {
+  return emps.map(e => {
+    const hasFace = !!(e.faceDescriptor || (e.faceDescriptors?.length > 0));
+    const cnt = e.faceRegCount || 0;
+    const locked = e.faceRegLocked === true;
+    const descsN = (e.faceDescriptors||[]).filter(d=>Array.isArray(d)&&d.length===128).length;
+    const initial = (e.name||'?')[0].toUpperCase();
+    const avatarBg = hasFace ? 'linear-gradient(135deg,#22c55e,#16a34a)' : 'linear-gradient(135deg,#94a3b8,#64748b)';
+    const statusBg = hasFace ? 'rgba(5,46,22,.08)' : 'rgba(239,68,68,.06)';
+    const statusBorder = hasFace ? 'rgba(34,197,94,.3)' : 'rgba(239,68,68,.2)';
+    const statusTxt = hasFace
+      ? `<span style="color:#16a34a;font-weight:700;font-size:11px;"><i class="fas fa-check-circle mr-1"></i>ลงทะเบียนแล้ว · ${descsN} มุม</span>`
+      : `<span style="color:#dc2626;font-weight:700;font-size:11px;"><i class="fas fa-exclamation-circle mr-1"></i>ยังไม่ได้ลงทะเบียน</span>`;
+    const dots = [0,1,2].map(i=>`<div style="width:10px;height:10px;border-radius:50%;background:${i<cnt?'#7c3aed':'#e5e7eb'};"></div>`).join('');
+    return `<div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 1px 8px rgba(0,0,0,.07);border:1px solid #f1f5f9;transition:box-shadow .2s;" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'" onmouseleave="this.style.boxShadow='0 1px 8px rgba(0,0,0,.07)'">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:${avatarBg};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;flex-shrink:0;">${initial}</div>
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:14px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.name}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:1px;">${e.dept||'-'} · ${e.sup||'ไม่มีหัวหน้า'}</div>
+        </div>
       </div>
-    </td>
-    <td class="px-4 py-2.5 flex gap-2 flex-wrap">
-      <button onclick="openFaceRegister('${e._key}')" class="text-purple-600 text-xs hover:underline flex items-center gap-1">
-        <i class="fas fa-camera"></i>${e.faceDescriptor?'ลงใหม่':'ลงทะเบียน'}
-      </button>
-      ${(e.faceRegLocked || (e.faceRegCount||0) >= FACE_REG_MAX) ? `
-      <button onclick="doAdminUnlockFace('${e._key}')" class="text-orange-500 text-xs hover:underline flex items-center gap-1">
-        <i class="fas fa-unlock"></i>ปลดล็อค
-      </button>` : ''}
-      ${e.faceDescriptor ? `
-      <button onclick="delFaceData('${e._key}')" class="text-red-400 text-xs hover:underline flex items-center gap-1">
-        <i class="fas fa-trash"></i>ลบ
-      </button>` : ''}
-    </td>
-  </tr>`).join('');
+      <!-- Status badge -->
+      <div style="background:${statusBg};border:1px solid ${statusBorder};border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+        ${statusTxt}
+        <div style="display:flex;gap:4px;align-items:center;">${dots}${locked?'<i class="fas fa-lock" style="color:#dc2626;font-size:10px;margin-left:4px;"></i>':''}</div>
+      </div>
+      <!-- Action buttons -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="openFaceRegister('${e._key}')"
+          style="flex:1;padding:9px 0;border:none;border-radius:10px;
+            background:${hasFace?'linear-gradient(135deg,#7c3aed,#6d28d9)':'linear-gradient(135deg,#2563eb,#1d4ed8)'};
+            color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;
+            display:flex;align-items:center;justify-content:center;gap:6px;transition:opacity .15s;"
+          onmousedown="this.style.opacity='.8'" onmouseup="this.style.opacity='1'">
+          <i class="fas fa-camera"></i>${hasFace?'ลงทะเบียนใหม่':'📷 ลงทะเบียน'}
+        </button>
+        ${locked||(cnt>=FACE_REG_MAX)?`
+        <button onclick="doAdminUnlockFace('${e._key}')"
+          style="padding:9px 12px;border:1px solid #fed7aa;border-radius:10px;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;"
+          title="ปลดล็อค"><i class="fas fa-unlock"></i></button>`:''}
+        ${hasFace?`
+        <button onclick="delFaceData('${e._key}')"
+          style="padding:9px 12px;border:1px solid #fecaca;border-radius:10px;background:#fff0f0;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;"
+          title="ลบข้อมูลใบหน้า"><i class="fas fa-trash"></i></button>`:''}
+      </div>
+    </div>`;
+  }).join('');
 }
+// Keep old _buildFaceRegRows for backward-compat (not used in new UI)
+function _buildFaceRegRows(emps){ return ''; }
 window.filterFaceRegTable = q => {
-  const tbody = document.getElementById('face-reg-tbody'); if (!tbody) return;
+  const grid = document.getElementById('face-reg-grid'); if (!grid) return;
+  const cnt  = document.getElementById('face-reg-count');
   const ql = q.toLowerCase();
-  tbody.innerHTML = _buildFaceRegRows(db.employees.filter(e => !q ||
-    e.name.toLowerCase().includes(ql) || (e.dept||'').toLowerCase().includes(ql) || (e.sup||'').toLowerCase().includes(ql)));
+  const filtered = db.employees.filter(e => !q ||
+    e.name.toLowerCase().includes(ql) || (e.dept||'').toLowerCase().includes(ql) || (e.sup||'').toLowerCase().includes(ql));
+  grid.innerHTML = _buildFaceRegCards(filtered);
+  if(cnt) cnt.textContent = `${filtered.length} คน`;
 };
 
 // =====================================================================
@@ -13508,13 +13864,27 @@ function scanParseAttlog(text){
     if(!byKey[key]) byKey[key]={empId,date,times:[]};
     if(time) byKey[key].times.push(time);
   }
+  // ---- helper: "HH:MM" → นาทีนับจากเที่ยงคืน ----
+  const toMin = t => { const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+  const MIN_GAP_MINUTES = 120; // ห่างกันน้อยกว่า 2 ชั่วโมง = สแกนซ้ำ ไม่ถือเป็น checkout
+
   return Object.values(byKey).map(r=>{
     r.times.sort();
+    const ciTime = r.times[0] || null;
+    // หา checkout = เวลาสุดท้ายที่ห่างจาก checkIn อย่างน้อย MIN_GAP_MINUTES นาที
+    let coTime = null;
+    for(let i = r.times.length - 1; i >= 1; i--){
+      if(toMin(r.times[i]) - toMin(ciTime) >= MIN_GAP_MINUTES){
+        coTime = r.times[i];
+        break;
+      }
+    }
     return {
       empId   : r.empId,
       date    : r.date,
-      checkIn : r.times[0]||null,
-      checkOut: r.times.length>1 ? r.times[r.times.length-1] : null
+      checkIn : ciTime,
+      checkOut: coTime,
+      _allTimes: r.times // เก็บไว้ debug
     };
   }).sort((a,b)=>a.date.localeCompare(b.date)||Number(a.empId)-Number(b.empId));
 }
