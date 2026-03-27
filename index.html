@@ -1044,6 +1044,7 @@ function getMenus(role){
     {tab:'area-methods',icon:'fas fa-map-pin',label:'วิธีเช็คชื่อรายพื้นที่',c:'text-orange-400'},
     {tab:'device-bindings',icon:'fas fa-shield-alt',label:'Device Binding',c:'text-red-400'},
     {tab:'fraud-alerts',icon:'fas fa-exclamation-triangle',label:'แจ้งเตือนทุจริต',c:'text-orange-400'},
+    {tab:'line-settings',icon:'fab fa-line',label:'LINE แจ้งเตือน',c:'text-green-400'},
     {tab:'live-track',icon:'fas fa-satellite-dish',label:'Live GPS Tracking',c:'text-green-400'},
     {tab:'gps-timeline',icon:'fas fa-route',label:'Timeline GPS Tracking',c:'text-teal-400'},
     {tab:'manage-pwd',icon:'fas fa-key',label:'จัดการรหัสผ่าน'},
@@ -1134,7 +1135,8 @@ function renderPage(tab){
     'emp-home':pgEmpHome,'emp-hist':pgEmpHist,'emp-score':pgEmpScore,'chg-pwd':pgChgPwd,
     'admin-view-sup':pgAdminViewSup,'admin-view-emp':pgAdminViewEmp,
     'leave-settings':pgLeaveSettings,
-    'emp-face-reg':pgEmpFaceReg
+    'emp-face-reg':pgEmpFaceReg,
+    'line-settings':pgLineSettings
   };
   if(map[tab])map[tab](); else mc.innerHTML='<p class="text-gray-400 text-sm">กำลังพัฒนา...</p>';
 }
@@ -5994,6 +5996,13 @@ async function _loadRecentHistory(empObj) {
 // ---- หน้าหลังสแกนสำเร็จ ----
 function _renderCheckinDone(wrap, empObj, alr) {
   const lateInfo = checkLate(empObj, alr.checkInTime, alr.locationId);
+  // ── LINE: แจ้งเตือนมาสาย ──────────────────────────────────────────
+  if (lateInfo.late) {
+    sendLineMsg(
+      `⏰ มาสาย ${lateInfo.minutesLate} นาที\n👤 ${empObj.name} (${empObj.dept||'-'})\n📍 ${alr.locationName||'-'} · เข้างาน ${alr.checkInTime} น.\n⏱ กำหนดเข้า ${lateInfo.workStart} น.`,
+      'late'
+    );
+  }
   const lateBanner = lateInfo.late ? `
     <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);border-radius:16px;padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(220,38,38,.3);">
       <div style="width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -6411,21 +6420,16 @@ async function _empAutoCheckOut(token){
   } else if (!_qrCoArea && gpsLocations.length) {
     _qrCoArea = gpsLocations.reduce((b,l)=>distM(l.lat,l.lng,gpsResult.rawLat,gpsResult.rawLng)<distM(b.lat,b.lng,gpsResult.rawLat,gpsResult.rawLng)?l:b,gpsLocations[0]);
   }
-  if (checkinRecQR.locationId && _qrCoArea && checkinRecQR.locationId !== _qrCoArea.id) {
-    if(statusEl){statusEl.style.cssText='display:block;margin-top:10px;padding:14px;border-radius:12px;background:#fef2f2;border:2px solid #fecaca;text-align:center;font-size:13px;';
-      statusEl.innerHTML=`🚫 ไม่สามารถออกงานที่นี่ได้<br><span style="font-size:11px;color:#991b1b;">เข้างานที่ <b>${checkinRecQR.locationName||checkinRecQR.locationId}</b> ต้องออกที่เดิม</span>`;}
-    await fbPush('/fraudAlerts',{type:'LOCATION_MISMATCH',empId:empObj._key,empName:empObj.name,
-      checkinLocation:checkinRecQR.locationName||checkinRecQR.locationId,checkoutLocation:_qrCoArea.name||_qrCoArea.id,
-      timestamp:Date.now(),dateStr:todayStr});
-    if(btnScan)btnScan.disabled=false;
-    return;
-  }
+  // ✅ อนุญาตให้ออกงานต่างสถานที่ได้ — บันทึกหมายเหตุไว้เท่านั้น
+  const _qrLocMismatch = checkinRecQR.locationId && _qrCoArea && checkinRecQR.locationId !== _qrCoArea.id;
   const now=new Date(),ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   showSync();
   try{
     const coLocId=_qrCoArea?.id||'';
+    const extraQR = _qrLocMismatch ? { checkoutDiffLocation: true,
+      checkoutDiffNote: `เข้า:${checkinRecQR.locationName||checkinRecQR.locationId} ออก:${_qrCoArea.name||_qrCoArea.id}` } : {};
     await fbPatch(`/attendance/${todayStr}/${recKey}`,{checkOutTime:ts,checkOutGps:true,checkOutDist:Math.round(gpsResult.dist),
-      checkOutLocationId:coLocId,checkOutLocationName:_qrCoArea?.name||''});
+      checkOutLocationId:coLocId,checkOutLocationName:_qrCoArea?.name||'',...extraQR});
     db.attendance[todayStr][recKey].checkOutTime=ts;
     db.attendance[todayStr][recKey].checkOutGps=true;
     hideSync();
@@ -6452,6 +6456,11 @@ async function handleEarlyOut(empObj, checkOutTime, locationId) {
   const mins = eo.minutesEarly % 60;
   const timeStr = hrs > 0 ? `${hrs} ชม. ${mins} น.` : `${mins} นาที`;
 
+  // ── LINE: แจ้งเตือนออกก่อนเวลา ────────────────────────────────────
+  sendLineMsg(
+    `🏃 ออกก่อนเวลา ${timeStr}\n👤 ${empObj.name} (${empObj.dept||'-'})\n⏱ กำหนดออก ${eo.workEnd} น.\n🔻 หักคะแนน -2 คะแนน`,
+    'earlyOut'
+  );
   // ── แจ้งเตือนบนหน้าจอพนักงาน ─────────────────────────────────
   const toast = document.createElement('div');
   toast.style.cssText = `
@@ -6492,37 +6501,64 @@ async function handleEarlyOut(empObj, checkOutTime, locationId) {
 //  CHECK-OUT DONE SCREEN
 // =====================================================================
 function _renderCheckoutDone(wrap, empObj, rec){
+  const ciLoc = rec.locationName || rec.locationId || '';
+  const coLoc = rec.checkOutLocationName || rec.checkOutLocationId || '';
+  const diffLoc = rec.checkoutDiffLocation === true;
+  // คำนวณชม.ทำงาน
+  const _wMin = (t) => { if(!t) return 0; const [h,m] = t.split(':').map(Number); return h*60+m; };
+  const workMin = _wMin(rec.checkOutTime) - _wMin(rec.checkInTime);
+  const workHrs = workMin > 0 ? `${Math.floor(workMin/60)}ชม. ${workMin%60}น.` : '-';
+
   wrap.innerHTML=`
     <div style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px;">
+      <!-- Header -->
       <div style="background:linear-gradient(135deg,#dc2626,#991b1b);padding:28px 24px 24px;text-align:center;color:#fff;">
         <div style="width:60px;height:60px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;">
           <i class="fas fa-sign-out-alt" style="font-size:28px;"></i>
         </div>
         <div style="font-size:20px;font-weight:700;margin-bottom:6px;">ออกงานสำเร็จ!</div>
         <div style="font-size:36px;font-weight:700;font-family:monospace;letter-spacing:3px;">${rec.checkOutTime}</div>
-        <div style="font-size:12px;opacity:.8;margin-top:6px;">${fmtThai(todayStr)}</div>
+        <div style="font-size:12px;opacity:.8;margin-top:6px;">${fmtThai(todayStr)} · ${empObj.name}</div>
       </div>
-      <div style="padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+
+      <!-- แจ้งเตือนต่างสถานที่ -->
+      ${diffLoc?`
+      <div style="background:#fffbeb;border-bottom:1px solid #fde68a;padding:10px 16px;display:flex;align-items:center;gap:8px;">
+        <i class="fas fa-exchange-alt" style="color:#d97706;font-size:14px;flex-shrink:0;"></i>
+        <div style="font-size:12px;color:#92400e;">
+          <strong>ออกงานต่างสถานที่</strong> — ระบบบันทึกแล้ว
+          <div style="font-size:11px;margin-top:2px;color:#b45309;">${rec.checkoutDiffNote||''}</div>
+        </div>
+      </div>`:''}
+
+      <!-- Stats grid -->
+      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div style="background:#f8fafc;border-radius:12px;padding:12px;">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">เวลาเข้างาน</div>
-          <div style="font-size:15px;font-weight:700;color:#1e293b;font-family:monospace;">${rec.checkInTime}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-sign-in-alt" style="color:#16a34a;margin-right:3px;"></i>เวลาเข้างาน</div>
+          <div style="font-size:16px;font-weight:700;color:#1e293b;font-family:monospace;">${rec.checkInTime}</div>
+          ${ciLoc?`<div style="font-size:10px;color:#64748b;margin-top:3px;"><i class="fas fa-map-marker-alt" style="margin-right:2px;color:#3b82f6;"></i>${ciLoc}</div>`:''}
         </div>
         <div style="background:#fef2f2;border-radius:12px;padding:12px;">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">เวลาออกงาน</div>
-          <div style="font-size:15px;font-weight:700;color:#dc2626;font-family:monospace;">${rec.checkOutTime}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-sign-out-alt" style="color:#dc2626;margin-right:3px;"></i>เวลาออกงาน</div>
+          <div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace;">${rec.checkOutTime}</div>
+          ${coLoc?`<div style="font-size:10px;color:#64748b;margin-top:3px;"><i class="fas fa-map-marker-alt" style="margin-right:2px;color:${diffLoc?'#f59e0b':'#3b82f6'};"></i>${coLoc}</div>`:''}
         </div>
-        <div style="background:#f8fafc;border-radius:12px;padding:12px;">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-sitemap" style="margin-right:3px;"></i>สายงาน</div>
-          <div style="font-size:13px;font-weight:700;color:#1e293b;">${rec.dept||'-'}</div>
+        <div style="background:#f0f9ff;border-radius:12px;padding:12px;">
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-clock" style="color:#0ea5e9;margin-right:3px;"></i>ชม.ทำงาน</div>
+          <div style="font-size:16px;font-weight:700;color:#0369a1;">${workHrs}</div>
         </div>
         <div style="background:#f0fdf4;border-radius:12px;padding:12px;">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-coins" style="margin-right:3px;"></i>ค่าแรงวันนี้</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;"><i class="fas fa-coins" style="color:#16a34a;margin-right:3px;"></i>ค่าแรงวันนี้</div>
           <div style="font-size:18px;font-weight:700;color:#16a34a;">฿${rec.total.toLocaleString()}</div>
         </div>
       </div>
-      <div style="padding:0 18px 18px;">
+
+      <!-- GPS status -->
+      <div style="padding:0 16px 16px;">
         <div style="border-radius:10px;padding:10px 14px;text-align:center;font-size:12px;font-weight:600;${rec.checkOutGps?'background:#dcfce7;color:#166534;':'background:#fee2e2;color:#991b1b;'}">
-          ${rec.checkOutGps?'<i class="fas fa-map-marker-alt" style="margin-right:5px;"></i>อยู่ในพื้นที่ทำงาน':'<i class="fas fa-exclamation-triangle" style="margin-right:5px;"></i>อยู่นอกพื้นที่ — บันทึกแล้ว'}
+          ${rec.checkOutGps
+            ?`<i class="fas fa-map-marker-alt" style="margin-right:5px;"></i>อยู่ในพื้นที่ทำงาน`
+            :`<i class="fas fa-exclamation-triangle" style="margin-right:5px;"></i>อยู่นอกพื้นที่ — บันทึกแล้ว`}
         </div>
       </div>
     </div>
@@ -7846,6 +7882,12 @@ window.submitLeaveReq = async function(){
       reason, status:'pending',
       submittedAt:new Date().toISOString()
     });
+    // ── LINE: แจ้งเตือนยื่นลา ──────────────────────────────────────
+    const _dateRange = startDate===endDate ? startDate : `${startDate} ถึง ${endDate}`;
+    sendLineMsg(
+      `🏖️ คำขอลาใหม่ รอการอนุมัติ\n👤 ${e.name} (${e.dept||'-'})\n📄 ประเภท: ${type}\n📅 ${_dateRange} (${days} วัน)${totalDeduct>0?'\n🔻 หักคะแนน '+totalDeduct+' คะแนน':''}\n📝 ${reason}`,
+      'leave'
+    );
     closeModal();
     // Show success
     const mc=document.getElementById('emp-home-body');
@@ -8213,6 +8255,7 @@ function subscribeToday(dateKey, cb) {
       _todaySSE = null;
       _todayPollTimer = setInterval(async () => {
         await loadAttendanceDate(dateKey); cb();
+        _checkForgotAttendance();
       }, 20000);
     };
   } catch(_) {
@@ -9019,26 +9062,21 @@ async function _handleFaceCheckout(descriptor) {
   } else if (!_faceCoArea && gpsLocations.length) {
     _faceCoArea = gpsLocations.reduce((b,l)=>distM(l.lat,l.lng,gpsResult.rawLat,gpsResult.rawLng)<distM(b.lat,b.lng,gpsResult.rawLat,gpsResult.rawLng)?l:b,gpsLocations[0]);
   }
-  // ---- ตรวจ cross-location ----
+  // ✅ อนุญาตให้ออกงานต่างสถานที่ได้ — บันทึกหมายเหตุไว้เท่านั้น
   const bucket = db.attendance[todayStr] || {};
   const recKey = Object.entries(bucket).find(([,v]) => v.empId === matched.emp._key)?.[0];
   if (!recKey) { setFaceStatus('error', '❌ ไม่พบข้อมูลการเช็คชื่อ'); return; }
   const checkinRec = bucket[recKey];
-  if (checkinRec.locationId && _faceCoArea && checkinRec.locationId !== _faceCoArea.id) {
-    setFaceRing('red');
-    setFaceStatus('error', `🚫 ไม่สามารถออกงานที่นี่ได้<br><span style="font-size:11px;">เข้างานที่ <b>${checkinRec.locationName||checkinRec.locationId}</b> ต้องออกที่เดิม</span>`);
-    await fbPush('/fraudAlerts', { type:'LOCATION_MISMATCH', empId:matched.emp._key, empName:matched.emp.name,
-      checkinLocation:checkinRec.locationName||checkinRec.locationId, checkoutLocation:_faceCoArea.name||_faceCoArea.id,
-      timestamp:Date.now(), dateStr:todayStr });
-    setTimeout(() => stopFaceCam(), 5000); return;
-  }
+  const _faceLocMismatch = checkinRec.locationId && _faceCoArea && checkinRec.locationId !== _faceCoArea.id;
 
   const now = new Date(), ts = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   showSync();
   try {
+    const extraFace = _faceLocMismatch ? { checkoutDiffLocation: true,
+      checkoutDiffNote: `เข้า:${checkinRec.locationName||checkinRec.locationId} ออก:${_faceCoArea.name||_faceCoArea.id}` } : {};
     await fbPatch(`/attendance/${todayStr}/${recKey}`, {
       checkOutTime:ts, checkOutGps:true, checkOutDist:Math.round(gpsResult.dist), checkOutMethod:'face',
-      checkOutLocationId:_faceCoArea?.id||'', checkOutLocationName:_faceCoArea?.name||''
+      checkOutLocationId:_faceCoArea?.id||'', checkOutLocationName:_faceCoArea?.name||'', ...extraFace
     });
     db.attendance[todayStr][recKey].checkOutTime = ts;
     db.attendance[todayStr][recKey].checkOutGps = true;
@@ -10463,8 +10501,7 @@ window.doGpsButtonCheckout = async function() {
   const recKey = recEntry?.[0];
   if (!recKey) { if (statusEl) { statusEl.style.background='#fef9c3'; statusEl.style.color='#854d0e'; statusEl.innerHTML='⚠️ ไม่พบข้อมูลการเช็คชื่อวันนี้'; } return; }
   const checkinRec = recEntry[1];
-  // ---- ตรวจ cross-location fraud ----
-  // เมื่อมีพื้นที่ทับซ้อน ให้เลือกพื้นที่ก่อนออก และเปรียบเทียบกับที่เข้างาน
+  // ✅ อนุญาตให้ออกงานต่างสถานที่ได้ — บันทึกหมายเหตุไว้เท่านั้น
   let chosenOutArea = gpsResult.matchedAreas.length === 1 ? gpsResult.matchedAreas[0] : null;
   if (gpsResult.matchedAreas.length > 1) {
     if (statusEl) statusEl.style.display = 'none';
@@ -10475,23 +10512,17 @@ window.doGpsButtonCheckout = async function() {
     }
     chosenOutArea = sel.area;
   }
-  // ตรวจว่าออกงานตรงกับที่เข้างานไหม
-  if (checkinRec.locationId && chosenOutArea && checkinRec.locationId !== chosenOutArea.id) {
-    const ciName = checkinRec.locationName || checkinRec.locationId;
-    const coName = chosenOutArea.name || chosenOutArea.id;
-    if (statusEl) { statusEl.style.cssText='display:block;margin-top:10px;padding:14px;border-radius:12px;background:#fef2f2;border:2px solid #fecaca;font-size:13px;font-weight:600;text-align:center;';
-      statusEl.innerHTML=`🚫 ไม่สามารถออกงานที่นี่ได้<br><span style="font-size:11px;font-weight:400;color:#991b1b;">เข้างานที่ <b>${ciName}</b> ต้องออกที่เดิม</span>`; }
-    await fbPush('/fraudAlerts', { type:'LOCATION_MISMATCH', empId:empObj._key, empName:empObj.name,
-      checkinLocation:ciName, checkoutLocation:coName, timestamp:Date.now(), dateStr:todayStr });
-    if (btn) { btn.disabled=false; btn.style.opacity='1'; }
-    return;
-  }
+  const _gpsLocMismatch = checkinRec.locationId && chosenOutArea && checkinRec.locationId !== chosenOutArea.id;
   const now = new Date(), ts = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   showSync();
   try {
     const coLocId2 = chosenOutArea?.id||'';
+    const ciName2 = checkinRec.locationName || checkinRec.locationId;
+    const coName2 = chosenOutArea?.name || chosenOutArea?.id || '';
+    const extraGps = _gpsLocMismatch ? { checkoutDiffLocation: true,
+      checkoutDiffNote: `เข้า:${ciName2} ออก:${coName2}` } : {};
     await fbPatch('/attendance/'+todayStr+'/'+recKey, { checkOutTime:ts, checkOutGps:true, checkOutDist:Math.round(gpsResult.dist), checkOutMethod:'gps_button',
-      checkOutLocationId: coLocId2, checkOutLocationName: chosenOutArea?.name||'' });
+      checkOutLocationId: coLocId2, checkOutLocationName: chosenOutArea?.name||'', ...extraGps });
     db.attendance[todayStr][recKey].checkOutTime = ts;
     db.attendance[todayStr][recKey].checkOutGps = true;
     hideSync();
@@ -10613,6 +10644,372 @@ window.saveAreaMethod = async function(locId) {
 // =====================================================================
 //  DEVICE BINDINGS PAGE (Admin)
 // =====================================================================
+
+// =====================================================================
+//  LINE NOTIFY INTEGRATION
+//  ส่งแจ้งเตือนไลน์กลุ่มผ่าน Cloudflare Worker proxy
+// =====================================================================
+let _lineConfig = null; // cache
+
+async function _getLineConfig(forceRefresh) {
+  if (!forceRefresh && _lineConfig !== null) return _lineConfig;
+  try { _lineConfig = (await fbGet('/settings/lineNotify')) || {}; }
+  catch(e) { _lineConfig = {}; }
+  return _lineConfig;
+}
+
+// ส่งข้อความ LINE (ไม่ throw — fail silently)
+async function sendLineMsg(text, eventKey) {
+  try {
+    const cfg = await _getLineConfig();
+    if (!cfg.enabled || !cfg.proxyUrl || !cfg.token || !cfg.groupId) return;
+    if (eventKey && cfg['notify_'+eventKey] === false) return; // event ถูก disable
+    await fetch(cfg.proxyUrl, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ token:cfg.token, to:cfg.groupId, text })
+    });
+  } catch(e) { console.warn('[LINE]', e.message); }
+}
+
+// ตรวจลืมเข้า/ออกงาน — เรียกจาก poll timer
+async function _checkForgotAttendance() {
+  try {
+    const cfg = await _getLineConfig();
+    if (!cfg.enabled) return;
+    const now = new Date();
+    const nowMin = now.getHours()*60 + now.getMinutes();
+    const todayKey = todayStr;
+
+    // ── ลืมเข้างาน: แจ้งเตือน 1 ครั้งต่อวัน ตอน checkInAlertTime ──
+    if (cfg.notify_forgotCheckin !== false && cfg.checkInAlertTime) {
+      const [ah, am] = cfg.checkInAlertTime.split(':').map(Number);
+      const alertMin = ah*60 + am;
+      const flagKey = 'lnForgotCI_' + todayKey;
+      if (nowMin >= alertMin && nowMin <= alertMin+9 && !sessionStorage.getItem(flagKey)) {
+        sessionStorage.setItem(flagKey, '1');
+        await loadAttendanceDate(todayKey);
+        const checkedInIds = new Set(Object.values(db.attendance[todayKey]||{}).filter(r=>r.checkInTime).map(r=>r.empId));
+        const forgot = db.employees.filter(e => !checkedInIds.has(e._key));
+        if (forgot.length > 0) {
+          const names = forgot.slice(0,15).map(e=>`• ${e.name}`).join('\n');
+          await sendLineMsg(`🔔 ยังไม่ลงชื่อเข้างาน (${forgot.length} คน)\n${names}${forgot.length>15?'\n...และอีก '+(forgot.length-15)+' คน':''}\n📅 ${todayKey} · ณ ${cfg.checkInAlertTime} น.`);
+        }
+      }
+    }
+
+    // ── ลืมออกงาน: แจ้งเตือน 1 ครั้งต่อวัน ตอน checkOutAlertTime ──
+    if (cfg.notify_forgotCheckout !== false && cfg.checkOutAlertTime) {
+      const [bh, bm] = cfg.checkOutAlertTime.split(':').map(Number);
+      const alertMin2 = bh*60 + bm;
+      const flagKey2 = 'lnForgotCO_' + todayKey;
+      if (nowMin >= alertMin2 && nowMin <= alertMin2+9 && !sessionStorage.getItem(flagKey2)) {
+        sessionStorage.setItem(flagKey2, '1');
+        await loadAttendanceDate(todayKey);
+        const forgot2 = Object.values(db.attendance[todayKey]||{}).filter(r=>r.checkInTime&&!r.checkOutTime);
+        if (forgot2.length > 0) {
+          const names2 = forgot2.slice(0,15).map(r=>`• ${r.empName||r.empId}`).join('\n');
+          await sendLineMsg(`⚠️ ยังไม่ลงชื่อออกงาน (${forgot2.length} คน)\n${names2}${forgot2.length>15?'\n...และอีก '+(forgot2.length-15)+' คน':''}\n📅 ${todayKey} · ณ ${cfg.checkOutAlertTime} น.`);
+        }
+      }
+    }
+  } catch(e) { console.warn('[LINE forgotCheck]', e.message); }
+}
+
+// ── Admin settings page ──────────────────────────────────────────────
+async function pgLineSettings() {
+  const mc = document.getElementById('main-content');
+  mc.innerHTML = `<div class="flex justify-center py-10"><div class="loading-spinner" style="width:32px;height:32px;border-width:3px;"></div></div>`;
+  const cfg = await _getLineConfig(true);
+
+  const cfgStr = JSON.stringify(cfg, null, 2);
+
+  const CW_CODE = `// ── Cloudflare Worker (วางโค้ดนี้ใน worker.js) ──
+addEventListener('fetch', e => e.respondWith(handle(e.request)));
+async function handle(req) {
+  const cors = { 'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type' };
+  if (req.method === 'OPTIONS') return new Response(null,{headers:cors});
+  const { token, to, text } = await req.json();
+  const r = await fetch('https://api.line.me/v2/bot/message/push',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({ to, messages:[{type:'text',text}] })
+  });
+  const d = await r.json();
+  return new Response(JSON.stringify(d),{headers:{...cors,'Content-Type':'application/json'}});
+}`;
+
+  mc.innerHTML = `
+  <div style="max-width:680px;margin:0 auto;">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#00b300,#00c300);border-radius:20px;padding:24px 28px;margin-bottom:20px;display:flex;align-items:center;gap:16px;">
+      <div style="width:56px;height:56px;background:rgba(255,255,255,.2);border-radius:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i class="fab fa-line" style="font-size:28px;color:#fff;"></i>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#fff;">LINE แจ้งเตือนกลุ่ม</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:2px;">แจ้งเตือนมาสาย · ลา · ลืมลงชื่อ ผ่านไลน์กลุ่มอัตโนมัติ</div>
+      </div>
+      <!-- Toggle enable — ใช้ data-on แทน checkbox ป้องกัน double-toggle -->
+      <div style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:6px;">
+        <div id="ln-enabled-wrap" data-on="${cfg.enabled?'1':'0'}" onclick="lnToggleMain()"
+          style="width:52px;height:28px;border-radius:28px;background:${cfg.enabled?'rgba(255,255,255,.9)':'rgba(0,0,0,.3)'};
+                 position:relative;cursor:pointer;transition:background .3s;flex-shrink:0;user-select:none;">
+          <div id="ln-knob" style="position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;
+            background:#00b300;box-shadow:0 1px 4px rgba(0,0,0,.25);transition:transform .3s;
+            transform:${cfg.enabled?'translateX(24px)':'translateX(0)'};"></div>
+        </div>
+        <span id="ln-status-badge" style="font-size:10px;color:rgba(255,255,255,.8);font-weight:600;white-space:nowrap;">${cfg.enabled?'เปิดใช้งาน':'ปิดใช้งาน'}</span>
+      </div>
+    </div>
+
+    <!-- Step 1: Cloudflare Worker -->
+    <div style="background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#0f172a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+        สร้าง Cloudflare Worker (ฟรี)
+      </div>
+      <div style="font-size:12px;color:#475569;line-height:1.7;margin-bottom:10px;">
+        ① ไปที่ <a href="https://workers.cloudflare.com" target="_blank" style="color:#0071e3;font-weight:600;">workers.cloudflare.com</a> → สมัครฟรี<br>
+        ② กด <b>Create Worker</b> → วางโค้ดด้านล่าง → <b>Deploy</b><br>
+        ③ คัดลอก URL ที่ได้ (เช่น <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">https://line-proxy.xxx.workers.dev</code>)
+      </div>
+      <div style="position:relative;">
+        <pre id="cw-code-block" style="background:#0f172a;color:#e2e8f0;border-radius:12px;padding:14px 16px;font-size:11px;overflow-x:auto;margin:0;line-height:1.6;">${CW_CODE.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('cw-code-block').innerText).then(()=>this.innerHTML='✅ คัดลอกแล้ว').catch(()=>{})"
+          style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,.15);color:#e2e8f0;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:Sarabun,sans-serif;">
+          📋 คัดลอก
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: LINE Bot -->
+    <div style="background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#00b300;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+        สร้าง LINE Official Account + Bot
+      </div>
+      <div style="font-size:12px;color:#475569;line-height:1.7;">
+        ① ไปที่ <a href="https://developers.line.biz" target="_blank" style="color:#0071e3;font-weight:600;">developers.line.biz</a> → สร้าง Provider + Channel (Messaging API)<br>
+        ② คัดลอก <b>Channel Access Token</b> (ยาว ~170 ตัวอักษร)<br>
+        ③ เพิ่ม Bot เข้ากลุ่มไลน์ → ส่งข้อความใดก็ได้ใน Group<br>
+        ④ เปิด Webhook URL → ใช้ <a href="https://api.line.me/v2/bot/group/summary" target="_blank" style="color:#0071e3;">Group Lookup API</a> หรือ Webhook ดู groupId (<code>C...</code>)
+      </div>
+    </div>
+
+    <!-- Step 3: ตั้งค่า -->
+    <div style="background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#0071e3;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+        กรอกข้อมูลการตั้งค่า
+      </div>
+      <div style="display:grid;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px;">Cloudflare Worker URL *</label>
+          <input id="ln-proxy" type="url" value="${cfg.proxyUrl||''}" placeholder="https://line-proxy.xxx.workers.dev"
+            style="width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:13px;box-sizing:border-box;font-family:monospace;"
+            onfocus="this.style.borderColor='#00b300'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px;">LINE Channel Access Token *</label>
+          <input id="ln-token" type="text" value="${cfg.token||''}" placeholder="xxxxxxxxxxxxxxxxxx..."
+            style="width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:12px;box-sizing:border-box;font-family:monospace;"
+            onfocus="this.style.borderColor='#00b300'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px;">LINE Group Chat ID *</label>
+          <input id="ln-group" type="text" value="${cfg.groupId||''}" placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            style="width:100%;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:13px;box-sizing:border-box;font-family:monospace;"
+            onfocus="this.style.borderColor='#00b300'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: เลือก event -->
+    <div style="background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#7c3aed;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</div>
+        เลือกเหตุการณ์ที่ต้องการแจ้งเตือน
+      </div>
+      <div style="display:grid;gap:0;">
+        ${[
+          {key:'late',      icon:'⏰', label:'มาสาย',              desc:'แจ้งทันทีเมื่อพนักงานเช็คชื่อสาย'},
+          {key:'leave',     icon:'🏖️', label:'ยื่นลา',              desc:'แจ้งทุกครั้งที่พนักงานยื่นคำขอลา'},
+          {key:'leaveApprove',icon:'✅',label:'อนุมัติ/ไม่อนุมัติลา',desc:'แจ้งเมื่อแอดมินอนุมัติหรือปฏิเสธใบลา'},
+          {key:'earlyOut',  icon:'🏃', label:'ออกก่อนเวลา',          desc:'แจ้งเมื่อพนักงานออกก่อนเวลางาน'},
+          {key:'forgotCheckin', icon:'👻', label:'ลืมลงชื่อเข้างาน', desc:'แจ้งรายชื่อที่ยังไม่เช็คชื่อ ณ เวลาที่กำหนด'},
+          {key:'forgotCheckout',icon:'🔔', label:'ลืมลงชื่อออกงาน',  desc:'แจ้งรายชื่อที่ยังไม่เช็คเอาต์ ณ เวลาที่กำหนด'},
+        ].map((ev,i,arr)=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 0;${i<arr.length-1?'border-bottom:1px solid #f1f5f9':''};">
+          <div style="font-size:20px;width:30px;text-align:center;flex-shrink:0;">${ev.icon}</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#1e293b;">${ev.label}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${ev.desc}</div>
+          </div>
+          <div id="ln-ev-wrap-${ev.key}" data-on="${cfg['notify_'+ev.key]!==false?'1':'0'}"
+            onclick="lnToggleEv('${ev.key}')"
+            style="width:42px;height:24px;border-radius:24px;flex-shrink:0;cursor:pointer;position:relative;
+                   background:${cfg['notify_'+ev.key]!==false?'#00b300':'#d1d5db'};transition:background .25s;user-select:none;">
+            <div id="ln-ev-knob-${ev.key}" style="position:absolute;left:3px;top:3px;width:18px;height:18px;
+              border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .25s;
+              transform:${cfg['notify_'+ev.key]!==false?'translateX(18px)':'translateX(0)'};"></div>
+          </div>
+        </div>`).join('')}
+      </div>
+
+      <!-- เวลาแจ้งเตือนลืมเข้า/ออก -->
+      <div style="background:#f8fafc;border-radius:12px;padding:14px;margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:5px;">⏰ เวลาแจ้งลืมเข้างาน</label>
+          <input id="ln-ci-alert" type="time" value="${cfg.checkInAlertTime||'09:30'}"
+            style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:5px;">🔔 เวลาแจ้งลืมออกงาน</label>
+          <input id="ln-co-alert" type="time" value="${cfg.checkOutAlertTime||'20:00'}"
+            style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Buttons -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+      <button onclick="saveLineSettings()"
+        style="flex:1;background:linear-gradient(135deg,#00b300,#00c300);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+        <i class="fas fa-save mr-2"></i>บันทึกการตั้งค่า
+      </button>
+      <button id="ln-test-btn" onclick="testLineNotify(this)"
+        style="background:#f8fafc;color:#1e293b;border:1.5px solid #e5e7eb;border-radius:12px;padding:14px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+        <i class="fab fa-line mr-1" style="color:#00b300;"></i>ทดสอบส่ง
+      </button>
+    </div>
+  </div>`;
+}
+
+// ── Toggle functions — ใช้ data-on แทน checkbox ──────────────────────
+window.lnToggleMain = function() {
+  const wrap  = document.getElementById('ln-enabled-wrap');
+  const knob  = document.getElementById('ln-knob');
+  const badge = document.getElementById('ln-status-badge');
+  if (!wrap) return;
+  const nowOn = wrap.dataset.on === '1';
+  const next  = !nowOn;
+  wrap.dataset.on         = next ? '1' : '0';
+  wrap.style.background   = next ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.3)';
+  knob.style.transform    = next ? 'translateX(24px)' : 'translateX(0)';
+  badge.textContent       = next ? 'เปิดใช้งาน' : 'ปิดใช้งาน';
+};
+
+window.lnToggleEv = function(key) {
+  const wrap = document.getElementById('ln-ev-wrap-'+key);
+  const knob = document.getElementById('ln-ev-knob-'+key);
+  if (!wrap) return;
+  const nowOn = wrap.dataset.on === '1';
+  const next  = !nowOn;
+  wrap.dataset.on       = next ? '1' : '0';
+  wrap.style.background = next ? '#00b300' : '#d1d5db';
+  knob.style.transform  = next ? 'translateX(18px)' : 'translateX(0)';
+};
+
+window.saveLineSettings = async function() {
+  const enabledWrap = document.getElementById('ln-enabled-wrap');
+  const enabled  = enabledWrap ? enabledWrap.dataset.on === '1' : false;
+  const proxyUrl = document.getElementById('ln-proxy').value.trim();
+  const token    = document.getElementById('ln-token').value.trim();
+  const groupId  = document.getElementById('ln-group').value.trim();
+  const checkInAlertTime  = document.getElementById('ln-ci-alert').value;
+  const checkOutAlertTime = document.getElementById('ln-co-alert').value;
+  if (enabled && (!proxyUrl || !token || !groupId)) {
+    alert('กรุณากรอก Proxy URL, Token และ Group ID ให้ครบ');
+    return;
+  }
+  const events = ['late','leave','leaveApprove','earlyOut','forgotCheckin','forgotCheckout'];
+  const evObj  = {};
+  events.forEach(k => {
+    const w = document.getElementById('ln-ev-wrap-'+k);
+    evObj['notify_'+k] = w ? w.dataset.on !== '0' : true;
+  });
+  const cfg = { enabled, proxyUrl, token, groupId, checkInAlertTime, checkOutAlertTime, ...evObj };
+  showSync();
+  await fbSet('/settings/lineNotify', cfg);
+  _lineConfig = cfg;
+  hideSync();
+  // แสดง toast
+  const t = document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#00b300;color:#fff;padding:12px 28px;border-radius:20px;font-size:14px;font-weight:700;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2);font-family:Sarabun,sans-serif;';
+  t.innerHTML='<i class="fab fa-line mr-2"></i>บันทึกสำเร็จ!';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2500);
+};
+
+window.testLineNotify = async function(btn) {
+  // อ่านค่าจาก form โดยตรง ไม่ต้อง save ก่อน
+  const proxyUrl = (document.getElementById('ln-proxy')?.value||'').trim();
+  const token    = (document.getElementById('ln-token')?.value||'').trim();
+  const groupId  = (document.getElementById('ln-group')?.value||'').trim();
+
+  if (!proxyUrl || !token || !groupId) {
+    return alert('กรุณากรอก Proxy URL, Token และ Group ID ให้ครบก่อนทดสอบ');
+  }
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>กำลังส่ง...'; }
+
+  // บันทึกก่อนทดสอบ
+  await saveLineSettings();
+
+  try {
+    const res = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token, to: groupId,
+        text: `✅ ทดสอบ LINE แจ้งเตือน\n🏢 ระบบ HR 2PS Service\n🕐 ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}\n\nการตั้งค่าสำเร็จ! ระบบจะแจ้งเตือนกลุ่มนี้อัตโนมัติ 🎉`
+      })
+    });
+
+    // ตรวจสอบ HTTP status จาก Cloudflare Worker
+    if (!res.ok) {
+      const errText = await res.text().catch(()=>'');
+      throw new Error(`Proxy ตอบกลับ HTTP ${res.status}\n${errText}`);
+    }
+
+    // ตรวจสอบ response จาก LINE API
+    const data = await res.json().catch(()=>({}));
+    if (data && data.message && data.message !== 'ok' && data.details) {
+      // LINE ส่ง error กลับมา เช่น invalid token / wrong groupId
+      const lineErr = (data.details||[]).map(d=>d.message).join(', ') || data.message;
+      throw new Error(`LINE API: ${lineErr}`);
+    }
+
+    if (btn) {
+      btn.innerHTML = '✅ ส่งสำเร็จ! ตรวจสอบในกลุ่มไลน์';
+      btn.style.background = '#16a34a';
+      setTimeout(()=>{
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fab fa-line" style="margin-right:4px;"></i>ทดสอบส่ง';
+        btn.style.background = '';
+      }, 3000);
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fab fa-line" style="margin-right:4px;"></i>ทดสอบส่ง'; }
+
+    // วิเคราะห์ error และแนะนำวิธีแก้
+    let msg = '❌ ส่งไม่สำเร็จ\n\n';
+    const em = e.message || '';
+    if (em.includes('Failed to fetch') || em.includes('NetworkError') || em.includes('CORS')) {
+      msg += '📡 เชื่อมต่อ Cloudflare Worker ไม่ได้\n\nวิธีแก้:\n• ตรวจสอบ Proxy URL ว่าถูกต้อง\n• ตรวจสอบว่า Worker ถูก Deploy แล้ว\n• ลอง เปิด URL ในเบราว์เซอร์ใหม่';
+    } else if (em.includes('401') || em.includes('Authentication')) {
+      msg += '🔑 Channel Access Token ผิด\n\nวิธีแก้:\n• คัดลอก Token ใหม่จาก LINE Developers Console\n• ตรวจสอบว่าไม่มีช่องว่างหน้า/หลัง';
+    } else if (em.includes('400') || em.includes('groupId') || em.includes('recipient')) {
+      msg += '🆔 Group Chat ID ผิด\n\nวิธีแก้:\n• Group ID ต้องขึ้นต้นด้วย "C"\n• ความยาวประมาณ 33 ตัวอักษร\n• ตรวจสอบว่า Bot อยู่ในกลุ่มนั้นแล้ว';
+    } else if (em.includes('LINE API:')) {
+      msg += em;
+    } else {
+      msg += em;
+    }
+    alert(msg);
+  }
+};
 
 // =====================================================================
 //  FRAUD ALERTS PAGE — แสดงรายการพนักงานที่ตรวจพบ GPS ปลอม
@@ -14375,6 +14772,12 @@ window.lsApproveReq = async function(empId,reqId){
   try{
     await fbPatch(`/leaveRequests/${empId}/${reqId}`,{status:'approved',approvedAt:new Date().toISOString(),approvedBy:CU.name||CU.id});
     hideSync();
+    // ── LINE: แจ้งเตือนอนุมัติลา ──────────────────────────────────
+    try {
+      const req = (await fbGet(`/leaveRequests/${empId}/${reqId}`))||{};
+      const _dr = req.startDate===req.endDate ? req.startDate : `${req.startDate}–${req.endDate}`;
+      sendLineMsg(`✅ อนุมัติใบลาแล้ว\n👤 ${req.empName||empId} (${req.dept||'-'})\n📄 ${req.type||'-'} · ${_dr} (${req.days||1} วัน)\n✍️ อนุมัติโดย: ${CU.name||CU.id}`, 'leaveApprove');
+    } catch(le) {}
     lsToast('อนุมัติสำเร็จ','#16a34a');
     const row=document.getElementById(`ls-req-${empId}-${reqId}`);
     if(row){
@@ -14391,6 +14794,11 @@ window.lsRejectReq = async function(empId,reqId){
   try{
     await fbPatch(`/leaveRequests/${empId}/${reqId}`,{status:'rejected',rejectedAt:new Date().toISOString(),rejectedBy:CU.name||CU.id});
     hideSync();
+    // ── LINE: แจ้งเตือนปฏิเสธลา ───────────────────────────────────
+    try {
+      const req2 = (await fbGet(`/leaveRequests/${empId}/${reqId}`))||{};
+      sendLineMsg(`❌ ไม่อนุมัติใบลา\n👤 ${req2.empName||empId} (${req2.dept||'-'})\n📄 ${req2.type||'-'} · ${req2.startDate||'-'}\n✍️ โดย: ${CU.name||CU.id}`, 'leaveApprove');
+    } catch(le) {}
     lsToast('บันทึกการไม่อนุมัติแล้ว','#dc2626');
     const row=document.getElementById(`ls-req-${empId}-${reqId}`);
     if(row){
