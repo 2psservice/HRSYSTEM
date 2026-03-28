@@ -828,21 +828,68 @@ async function doLogin() {
       err.textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
       err.classList.remove('hidden');
     } else {
-      // GPS locations already loaded in initApp; refresh on login just in case
-      if (!gpsLocations.length) {
-        const gpsData = await fbGet('/settings/gpsLocations');
-        if (gpsData) gpsLocations = Object.entries(gpsData).map(([k,v])=>({id:k,...v}));
-        if (gpsLocations.length) hrGPS = gpsLocations[0];
+      // ===== Device Binding ตรวจสอบ/ผูกอุปกรณ์ตั้งแต่ login =====
+      let deviceBlocked = false;
+      let deviceFirstBind = false;
+      if (CU.role === 'employee' || CU.role === 'supervisor') {
+        // ดึง deviceBindings ล่าสุดจาก Firebase
+        const devData = await fbGet('/deviceBindings').catch(() => null);
+        if (devData && typeof devData === 'object') deviceBindings = devData;
+
+        const did = getDeviceId();
+        const b = deviceBindings[CU.id];
+
+        // ตรวจว่า device นี้ถูกผูกกับบัญชีอื่นไหม
+        const allPeople = [
+          ...db.employees.map(e => ({ id: e._key, name: e.name, role: 'พนักงาน' })),
+          ...db.supervisors.map(s => ({ id: s._key, name: s.name, role: 'หัวหน้างาน' }))
+        ];
+        const conflictOther = allPeople.find(p => p.id !== CU.id && deviceBindings[p.id]?.deviceId === did);
+
+        if (conflictOther) {
+          // อุปกรณ์นี้ผูกกับคนอื่นอยู่แล้ว → ห้าม login
+          CU = null;
+          deviceBlocked = true;
+          err.textContent = `🚫 อุปกรณ์นี้ถูกผูกกับบัญชี "${conflictOther.name}" (${conflictOther.role}) แล้ว ไม่สามารถเข้าสู่ระบบได้`;
+          err.classList.remove('hidden');
+        } else if (b && b.deviceId && b.deviceId !== did) {
+          // บัญชีนี้ผูก device อื่นไว้ → ห้าม login
+          CU = null;
+          deviceBlocked = true;
+          err.textContent = '🚫 อุปกรณ์นี้ไม่ใช่อุปกรณ์ที่ลงทะเบียนไว้ กรุณาใช้อุปกรณ์เดิม หรือติดต่อผู้ดูแลระบบเพื่อรีเซ็ต';
+          err.classList.remove('hidden');
+        } else if (!b || !b.deviceId) {
+          // ยังไม่เคยผูก → ผูกอุปกรณ์นี้ทันที (ครั้งแรก)
+          const payload = { deviceId: did, boundAt: new Date().toISOString(), empName: CU.displayName };
+          await fbSet('/deviceBindings/' + CU.id, payload).catch(() => {});
+          deviceBindings[CU.id] = payload;
+          deviceFirstBind = true;
+        }
+        // else: deviceId ตรงกัน → ผ่านปกติ
       }
-      faceMatcherDirty = true;
-      await loadAttendanceDate(todayStr);
-      startApp();
-      // Auto-heal: fix employees ที่มี sup name แต่ supId ว่าง (admin เท่านั้น)
-      if (CU.role === 'admin') setTimeout(healEmployeeSupIds, 1500);
-      // เริ่ม GPS tracking สำหรับทั้งพนักงานและหัวหน้างาน (ทันทีหลัง login)
-      if (CU.role === 'employee' || CU.role === 'supervisor') setTimeout(startLiveGpsTracking, 2000);
-      // Admin: เริ่ม SSE realtime listener สำหรับ liveTrack
-      if (CU.role === 'admin') setTimeout(startLiveTrackSSE, 1000);
+      // ==========================================================
+
+      if (!deviceBlocked) {
+        // GPS locations already loaded in initApp; refresh on login just in case
+        if (!gpsLocations.length) {
+          const gpsData = await fbGet('/settings/gpsLocations');
+          if (gpsData) gpsLocations = Object.entries(gpsData).map(([k,v])=>({id:k,...v}));
+          if (gpsLocations.length) hrGPS = gpsLocations[0];
+        }
+        faceMatcherDirty = true;
+        await loadAttendanceDate(todayStr);
+        startApp();
+        // แจ้งเตือนเมื่อผูก device ครั้งแรก
+        if (deviceFirstBind) {
+          setTimeout(() => lsToast('🔒 ผูกอุปกรณ์นี้กับบัญชีของคุณแล้ว', '#7c3aed'), 600);
+        }
+        // Auto-heal: fix employees ที่มี sup name แต่ supId ว่าง (admin เท่านั้น)
+        if (CU.role === 'admin') setTimeout(healEmployeeSupIds, 1500);
+        // เริ่ม GPS tracking สำหรับทั้งพนักงานและหัวหน้างาน (ทันทีหลัง login)
+        if (CU.role === 'employee' || CU.role === 'supervisor') setTimeout(startLiveGpsTracking, 2000);
+        // Admin: เริ่ม SSE realtime listener สำหรับ liveTrack
+        if (CU.role === 'admin') setTimeout(startLiveTrackSSE, 1000);
+      }
     }
   } catch(e) {
     err.textContent = 'เชื่อมต่อ Firebase ไม่ได้: ' + e.message;
@@ -11574,6 +11621,13 @@ async function renderEmpCal() {
         ))
     : [];
 
+  // Load holiday settings from Firebase
+  const holRaw = await fbGet('/settings/holidays').catch(() => null);
+  const weeklyHolSet = new Set((holRaw?.weekly || []).map(Number));
+  // Special holidays: map dk → name
+  const specialHolMap = {};
+  Object.values(holRaw?.special || {}).forEach(h => { if(h?.date) specialHolMap[h.date] = h.name || 'วันหยุดพิเศษ'; });
+
   const timeToMin = t => { if(!t) return null; const[h,m]=(t+':00').split(':').map(Number); return h*60+m; };
   const siMin = timeToMin(shiftIn), soMin = timeToMin(shiftOut);
 
@@ -11604,7 +11658,8 @@ async function renderEmpCal() {
   let cells = '';
   // Headers
   dayNames.forEach((d, i) => {
-    cells += `<div style="text-align:center;font-size:12px;font-weight:700;color:${i===0?'#ef4444':i===6?'#3b82f6':'#64748b'};padding:8px 0 4px;">${d}</div>`;
+    const hCol = weeklyHolSet.has(i) ? '#7c3aed' : '#64748b';
+    cells += `<div style="text-align:center;font-size:12px;font-weight:700;color:${hCol};padding:8px 0 4px;">${d}</div>`;
   });
   // Empty prefix
   for (let i = 0; i < firstDay; i++) cells += `<div></div>`;
@@ -11613,12 +11668,13 @@ async function renderEmpCal() {
   const cutoffD = isThisMonth ? todayD : daysInMonth;
   for (let d = 1; d <= daysInMonth; d++) {
     const dow   = (firstDay + d - 1) % 7;
-    const isSun = dow === 0, isSat = dow === 6;
-    const isWeekday = !isSun && !isSat;
     const isToday = d === todayD;
     const dk  = `${month}-${String(d).padStart(2,'0')}`;
     const rec = recs.find(r => r.dk === dk);
     const lv  = leaveDateMap[dk];
+
+    const isHoliday = weeklyHolSet.has(dow) || !!specialHolMap[dk];
+    const isWorkday = !isHoliday;
 
     const ciMin = timeToMin(rec?.checkInTime);
     const coMin = timeToMin(rec?.checkOutTime);
@@ -11629,14 +11685,14 @@ async function renderEmpCal() {
     if(d <= cutoffD){
       if(rec){ sumWork++; if(isLate) sumLate++; if(isEarly) sumEarly++; if((rec.otPay||0)>0) sumOT++; }
       else if(lv) sumLeave++;
-      else if(isWeekday) sumAbsent++;
+      else if(isWorkday) sumAbsent++;
     }
 
     // Determine cell type
     let cellType = 'empty'; // empty / work / leave / weekend / today
     if(rec)  cellType = 'work';
     if(lv && !rec)   cellType = 'leave';
-    if((isSun||isSat) && !rec && !lv) cellType = 'weekend';
+    if(isHoliday && !rec && !lv) cellType = 'weekend';
     if(isToday) cellType = 'today';
 
     // Colors
@@ -11653,7 +11709,7 @@ async function renderEmpCal() {
     let subLabel = '';
     if(rec) subLabel = rec.checkInTime || '';
     else if(lv) subLabel = (lv.type||'').length>4 ? (lv.type||'').slice(0,4)+'…' : (lv.type||'');
-    else if(isSun||isSat) subLabel = 'หยุด';
+    else if(isHoliday) subLabel = specialHolMap[dk] ? (specialHolMap[dk].length>4 ? specialHolMap[dk].slice(0,4)+'…' : specialHolMap[dk]) : 'หยุด';
 
     // OT badge
     const hasOT = rec && (rec.otPay||0)>0;
@@ -11672,6 +11728,7 @@ async function renderEmpCal() {
       leaveType: lv?.type||'', leaveReason: lv?.reason||'',
       leaveDeduct: lv?.totalDeduct||0,
       isLate, isEarly, shiftIn, shiftOut,
+      holidayName: specialHolMap[dk]||'',
     }).replace(/"/g,'&quot;');
 
     cells += `
@@ -11787,7 +11844,7 @@ window.showCalDayDetail = function(dataStr) {
   // Determine header color + title
   let headerBg = '#16a34a', title = 'มาทำงาน';
   if(d.type==='leave')   { headerBg='#7c3aed'; title=d.leaveType||'วันลา'; }
-  if(d.type==='weekend') { headerBg='#6366f1'; title='วันหยุด'; }
+  if(d.type==='weekend') { headerBg='#6366f1'; title=d.holidayName||'วันหยุด'; }
   if(d.type==='empty')   { headerBg='#94a3b8'; title='ไม่มีข้อมูล'; }
   if(d.type==='today')   { headerBg='#16a34a'; title='มาทำงาน'; }
 
