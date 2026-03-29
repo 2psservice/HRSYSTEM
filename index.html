@@ -7694,7 +7694,7 @@ async function renderEmpHome(){
           <span class="emp-menu-label">ประกาศ</span>
         </button>
         <!-- สลิปเงินเดือน -->
-        <button onclick="openEmpPayslipModal()" class="emp-menu-btn">
+        <button onclick="pgEmpPayslip()" class="emp-menu-btn">
           <div class="emp-menu-icon" style="background:#fef2f2;"><i class="fas fa-file-invoice-dollar" style="color:#dc2626;"></i></div>
           <span class="emp-menu-label">สลิปเงินเดือน</span>
         </button>
@@ -8111,6 +8111,186 @@ window.empDownloadPayslipPDF = function(){
   win.document.write(html);
   win.document.close();
   win.onload = () => { win.focus(); win.print(); };
+};
+
+// ── Donut SVG helper ─────────────────────────────────────────────────
+function _buildDonutSVG(inc, ded, net) {
+  const r = 68, cx = 100, cy = 100;
+  const C = 2 * Math.PI * r;
+  const total = inc + ded + net;
+  if (!total) return `<svg viewBox="0 0 200 200" width="155" height="155"><circle cx="100" cy="100" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="32"/><circle cx="100" cy="100" r="52" fill="white"/></svg>`;
+  const segs = [
+    { v: inc, c: '#4ade80' },
+    { v: ded, c: '#f87171' },
+    { v: net, c: '#60a5fa' },
+  ];
+  let circles = '', cum = 0;
+  for (const s of segs) {
+    const dash = (s.v / total) * C;
+    const off = (C * 0.25 - cum).toFixed(2);
+    circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.c}" stroke-width="32"
+      stroke-dasharray="${dash.toFixed(2)} ${(C - dash + 0.5).toFixed(2)}"
+      stroke-dashoffset="${off}"/>`;
+    cum += dash;
+  }
+  return `<svg viewBox="0 0 200 200" width="155" height="155">
+    <g transform="rotate(-90 100 100)">${circles}</g>
+    <circle cx="100" cy="100" r="52" fill="white"/>
+  </svg>`;
+}
+
+// ── Employee Payslip Page ─────────────────────────────────────────────
+window.pgEmpPayslip = async function() {
+  const mc = document.getElementById('main-content');
+  mc.style.background = '#f1f5f9';
+  mc.innerHTML = `<div style="display:flex;justify-content:center;padding:60px;"><div class="loading-spinner" style="width:32px;height:32px;border-width:3px;"></div></div>`;
+
+  const e = db.employees.find(x => x._key === CU.id);
+  if (!e) { pgEmpHome(); return; }
+
+  const raw = await fbGet(`/publishedPayslips/${e._key}`).catch(() => null);
+  const slips = raw && typeof raw === 'object' ? Object.entries(raw)
+    .filter(([,v]) => v)
+    .map(([k,v]) => ({ ymKey: k, ym: k.replace('_','-'), ...v }))
+    .sort((a,b) => b.ym.localeCompare(a.ym)) : [];
+  window._empPayslips = slips;
+
+  const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+    'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  const F2 = v => (v||0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  // Annual summary
+  const latestYear = slips[0]?.ym?.slice(0,4) || '';
+  const thYear = latestYear ? (parseInt(latestYear)+543) : '';
+  const yearSlips = latestYear ? slips.filter(s => s.ym?.startsWith(latestYear)) : [];
+  const sumIncome = yearSlips.reduce((s,x) => s+(x.totalIncome||0), 0);
+  const sumDeduct = yearSlips.reduce((s,x) => s+(x.totalDeduct||0), 0);
+  const sumNet    = yearSlips.reduce((s,x) => s+(x.net||0), 0);
+  const donut = _buildDonutSVG(sumIncome, sumDeduct, sumNet);
+
+  function slipCard(s) {
+    const [yr, mo] = (s.ym||'--').split('-');
+    const moName = MONTHS_TH[(parseInt(mo)||1)-1] || '';
+    const thYr = (parseInt(yr)||0)+543;
+    return `
+    <div onclick="empDownloadSlipDirect('${s.ymKey}')"
+      style="background:#fff;border-radius:16px;padding:16px 18px;margin-bottom:12px;
+             box-shadow:0 2px 8px rgba(0,0,0,.07);cursor:pointer;"
+      onmousedown="this.style.transform='scale(.98)'" onmouseup="this.style.transform=''"
+      ontouchstart="this.style.transform='scale(.98)'" ontouchend="this.style.transform=''">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#1d4ed8,#60a5fa);
+                      display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <i class="fas fa-file-invoice-dollar" style="color:#fff;font-size:18px;"></i>
+          </div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:#1e293b;">${moName}</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:1px;">พ.ศ. ${thYr}</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:14px;font-weight:800;color:#2563eb;">สุทธิ ${F2(s.net)}</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:1px;">บาท</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;">
+          เงินได้&nbsp;${F2(s.totalIncome)}
+        </span>
+        <span style="background:#fee2e2;color:#dc2626;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;">
+          เงินหัก&nbsp;${F2(s.totalDeduct)}
+        </span>
+        <span style="background:#eff6ff;color:#2563eb;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;">
+          <i class="fas fa-download" style="font-size:10px;margin-right:3px;"></i>โหลด PDF
+        </span>
+      </div>
+    </div>`;
+  }
+
+  mc.innerHTML = `
+  <div style="min-height:100vh;background:#f1f5f9;padding-bottom:40px;">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#2196F3,#1565C0);padding:16px 18px 22px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="pgEmpHome()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:36px;height:36px;border-radius:10px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#fff;line-height:1.2;">สลิปเงินเดือน</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:1px;">E-Payslip</div>
+        </div>
+      </div>
+    </div>
+    <div style="max-width:480px;margin:0 auto;padding:18px 14px 0;">
+      ${slips.length === 0 ? `
+        <div style="background:#fff;border-radius:20px;padding:48px 20px;text-align:center;margin-top:20px;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+          <div style="font-size:52px;margin-bottom:16px;">📄</div>
+          <div style="font-size:16px;font-weight:700;color:#374151;margin-bottom:6px;">ยังไม่มีสลิปเงินเดือน</div>
+          <div style="font-size:13px;color:#9ca3af;">แอดมินยังไม่ได้เผยแพร่สลิปเดือนใด</div>
+        </div>` : `
+      <!-- Summary card -->
+      <div style="background:#fff;border-radius:20px;padding:18px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.07);">
+        <div style="text-align:center;margin-bottom:14px;">
+          <span style="background:#f1f5f9;border:1px solid #e2e8f0;padding:6px 18px;border-radius:20px;font-size:12px;font-weight:600;color:#475569;">
+            สรุปข้อมูลของปี พ.ศ. ${thYear}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;">
+          ${donut}
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:13px;height:13px;border-radius:50%;background:#4ade80;flex-shrink:0;"></div>
+              <div>
+                <div style="font-size:11px;color:#64748b;font-weight:600;">เงินได้รวม</div>
+                <div style="font-size:15px;font-weight:800;color:#16a34a;">${F2(sumIncome)}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:13px;height:13px;border-radius:50%;background:#f87171;flex-shrink:0;"></div>
+              <div>
+                <div style="font-size:11px;color:#64748b;font-weight:600;">เงินหักรวม</div>
+                <div style="font-size:15px;font-weight:800;color:#dc2626;">${F2(sumDeduct)}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:13px;height:13px;border-radius:50%;background:#60a5fa;flex-shrink:0;"></div>
+              <div>
+                <div style="font-size:11px;color:#64748b;font-weight:600;">สุทธิ</div>
+                <div style="font-size:15px;font-weight:800;color:#2563eb;">${F2(sumNet)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:14px;">
+          <div style="width:24px;height:6px;border-radius:3px;background:#2196F3;"></div>
+          <div style="width:6px;height:6px;border-radius:3px;background:#cbd5e1;margin-top:0;"></div>
+        </div>
+      </div>
+      <!-- Monthly cards -->
+      <div style="font-size:13px;font-weight:700;color:#475569;margin-bottom:10px;padding-left:2px;">
+        <i class="fas fa-history" style="margin-right:6px;color:#94a3b8;"></i>ประวัติสลิปทั้งหมด (${slips.length} เดือน)
+      </div>
+      ${slips.map(slipCard).join('')}`}
+    </div>
+  </div>`;
+};
+
+window.empDownloadSlipDirect = async function(ymKey) {
+  const slip = (window._empPayslips||[]).find(s => s.ymKey === ymKey);
+  if (!slip) return;
+  window._currentSlip = slip;
+  try {
+    const saved = await fbGet('/settings/payslipFields');
+    if (saved && typeof saved === 'object') {
+      ['income','deduct'].forEach(g => {
+        if (saved[g]) Object.keys(saved[g]).forEach(k => {
+          if (payslipFields[g]?.[k]) payslipFields[g][k].on = !!saved[g][k].on;
+        });
+      });
+    }
+  } catch(_) {}
+  empDownloadPayslipPDF();
 };
 
 // pgEmpHist replaced below
