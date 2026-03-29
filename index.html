@@ -8891,29 +8891,6 @@ async function _faceDetectLoop() {
     return;
   }
 
-  // ---- EAR Blink Liveness Challenge — ต้องกะพริบตาก่อนผ่าน ----
-  if (!_livenessCleared) {
-    // Smooth EAR ด้วย rolling average เพื่อลด noise
-    const rawEar = _computeEAR(det.landmarks);
-    _earHistory.push(rawEar);
-    if (_earHistory.length > EAR_SMOOTH_FRAMES) _earHistory.shift();
-    const ear = _earHistory.reduce((s, v) => s + v, 0) / _earHistory.length;
-
-    if (_blinkState === 'open' && ear < EAR_BLINK_THRESH) {
-      _blinkState = 'closing'; // ตาเริ่มหลับ
-    } else if (_blinkState === 'closing' && ear > EAR_OPEN_THRESH) {
-      _blinkCount++;           // กะพริบสำเร็จ 1 ครั้ง
-      _blinkState = 'open';
-      if (_blinkCount >= LIVENESS_BLINKS_NEEDED) {
-        _livenessCleared = true; // ผ่าน liveness — ดำเนินการสแกนต่อ
-      }
-    }
-    setFaceRing('blue');
-    setFaceStatus('info', `👁 กรุณากะพริบตา 1 ครั้ง`);
-    if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
-    return;
-  }
-
   const matched = _matchFace(descriptor);
 
   if (!matched) {
