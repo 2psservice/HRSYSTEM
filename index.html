@@ -8761,57 +8761,6 @@ async function _faceDetectLoop() {
   const descriptor = Array.from(det.descriptor);
 
   // ============================================================
-  //  ANTI-SPOOF CHECKS  (blur + motion)
-  // ============================================================
-  if (_spoofLocked) {
-    setFaceRing('red');
-    setFaceStatus('error', '🚫 ตรวจพบการทุจริต — ติดต่อ HR เพื่อปลดล็อก');
-    await new Promise(r => setTimeout(r, 600));
-    if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
-    return;
-  }
-
-  // Blur check — ภาพเบลอมักเกิดจากโทรศัพท์อีกเครื่องหรือวิดีโอคอล
-  const blurScore = _computeBlurScore(canvas);
-  if (blurScore < SPOOF_BLUR_THRESH && _faceFrameCount > FACE_LIVENESS_FRAMES) {
-    _spoofWarnings++;
-    if (_spoofWarnings >= 5) {
-      _spoofLocked = true;
-      faceDetecting = false;
-      _showSpoofOverlay('🚫 ตรวจพบการใช้รูปภาพ/วิดีโอ\nไม่อนุญาตให้เช็คชื่อ');
-      setFaceStatus('error', '🚫 ตรวจพบการทุจริต — ระบบบล็อกการเช็คชื่อ<br><span style="font-size:11px;">กรุณาติดต่อ HR</span>');
-      setFaceRing('red');
-      return;
-    }
-    setFaceRing('red');
-    setFaceStatus('warn', `⚠️ ภาพไม่ชัด — ห้ามใช้รูปภาพหรือวิดีโอคอล (${_spoofWarnings}/5)`);
-    await new Promise(r => setTimeout(r, 500));
-    if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
-    return;
-  }
-
-  // Motion check — รูปนิ่ง/กระดาษจะไม่มี descriptor motion
-  const hasMotion = _checkDescriptorMotion(descriptor);
-  if (_faceFrameCount > SPOOF_MOTION_FRAMES + 2 && !hasMotion) {
-    _spoofWarnings++;
-    if (_spoofWarnings >= 5) {
-      _spoofLocked = true;
-      faceDetecting = false;
-      _showSpoofOverlay('🚫 ตรวจพบการใช้รูปภาพนิ่ง\nไม่อนุญาตให้เช็คชื่อ');
-      setFaceStatus('error', '🚫 ตรวจพบการทุจริต — ระบบบล็อกการเช็คชื่อ<br><span style="font-size:11px;">กรุณาติดต่อ HR</span>');
-      setFaceRing('red');
-      return;
-    }
-    setFaceRing('yellow');
-    setFaceStatus('warn', `⚠️ กรุณาขยับใบหน้าเล็กน้อย (${_spoofWarnings}/5)`);
-    await new Promise(r => setTimeout(r, 400));
-    if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
-    return;
-  }
-
-  // Motion detected — reset spoof warnings (ไม่ลด เพื่อป้องกันคนสลับรูป)
-  // Note: ไม่ reset เพื่อให้คะแนนสะสมถาวร ป้องกันการหลอกแบบสลับ
-  // ============================================================
   if (faceModalMode === 'register' || faceModalMode === 'emp-register') {
     // ============================================================
     //  3-STEP REGISTRATION: Front → Left → Right (REG_STEP_FRAMES each)
@@ -9128,6 +9077,7 @@ async function _handleFaceCheckin(descriptor) {
     checkInTime:ts, otHours:0, wage, otPay:0, total:wage,
     gpsOk:true, distMeters:Math.round(gpsResult.dist), timestamp:Date.now(), checkInMethod:'face',
     locationId:_faceCheckinArea?.id||'', locationName:_faceCheckinArea?.name||'' };
+  _captureCheckinPhoto(emp._key, emp.name, 'checkin');
   showSync();
   try {
     const res = await fbPush(`/attendance/${todayStr}`, rec);
@@ -9218,6 +9168,7 @@ async function _handleFaceCheckout(descriptor) {
   const _faceLocMismatch = checkinRec.locationId && _faceCoArea && checkinRec.locationId !== _faceCoArea.id;
 
   const now = new Date(), ts = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  _captureCheckinPhoto(matched.emp._key, matched.emp.name, 'checkout');
   showSync();
   try {
     const extraFace = _faceLocMismatch ? { checkoutDiffLocation: true,
@@ -9244,6 +9195,25 @@ async function _handleFaceCheckout(descriptor) {
     hideSync();
     setFaceStatus('error', '❌ บันทึกไม่สำเร็จ: ' + e.message);
   }
+}
+
+// ---- Capture face photo at checkin/checkout ----
+async function _captureCheckinPhoto(empId, empName, type) {
+  try {
+    const v = document.getElementById('face-vid');
+    if (!v || v.readyState < 2) return;
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 240;
+    c.getContext('2d').drawImage(v, 0, 0, 320, 240);
+    const photo = c.toDataURL('image/jpeg', 0.65);
+    const key = Date.now() + '_' + empId;
+    await fbSet('/checkinPhotos/' + key, {
+      empId, empName, type,
+      photo,
+      timestamp: Date.now(),
+      dateStr: todayStr
+    });
+  } catch(e) { console.warn('Photo capture error:', e); }
 }
 
 // ---- Helper: find best face match ----
@@ -14087,6 +14057,10 @@ function pgLeaveSettings(){
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-fingerprint mr-2"></i>อัพโหลดสแกนนิ้ว
       </button>
+      <button onclick="lsShowTab('photos')" id="ls-tab-photos"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-camera mr-2"></i>รูปสแกน
+      </button>
     </div>
 
     <!-- Tab: ประเภทการลา -->
@@ -14301,6 +14275,33 @@ function pgLeaveSettings(){
         </div>
       </div>
     </div>
+
+    <!-- Tab: รูปสแกน -->
+    <div id="ls-pane-photos" style="display:none;">
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;">
+        <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;">
+            <i class="fas fa-camera" style="color:#7c3aed;margin-right:8px;"></i>รูปสแกนหน้า
+            <span style="font-size:11px;color:#94a3b8;font-weight:400;margin-left:6px;">เก็บ 48 ชั่วโมง แล้วลบอัตโนมัติ</span>
+          </span>
+          <button onclick="lsLoadPhotos()" style="font-size:11px;color:#3b82f6;background:none;border:none;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;"><i class="fas fa-sync mr-1"></i>รีเฟรช</button>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="photo-filter-type" onchange="lsRenderPhotos()" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:Sarabun,sans-serif;outline:none;">
+            <option value="">ทั้งหมด</option>
+            <option value="checkin">เข้างาน</option>
+            <option value="checkout">ออกงาน</option>
+          </select>
+          <select id="photo-filter-emp" onchange="lsRenderPhotos()" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:Sarabun,sans-serif;outline:none;">
+            <option value="">พนักงานทุกคน</option>
+          </select>
+        </div>
+        <div id="ls-photos-list" style="padding:16px;min-height:100px;">
+          <div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;">เปิดแท็บนี้เพื่อโหลดรูป</div>
+        </div>
+      </div>
+    </div>
+
   </div>`;
 
   lsLoadTypes();
@@ -14311,7 +14312,7 @@ function pgLeaveSettings(){
 }
 
 window.lsShowTab = function(tab){
-  ['types','approve','holidays','scanner'].forEach(t=>{
+  ['types','approve','holidays','scanner','photos'].forEach(t=>{
     const pane=document.getElementById(`ls-pane-${t}`);
     const btn =document.getElementById(`ls-tab-${t}`);
     if(!pane||!btn) return;
@@ -14321,6 +14322,102 @@ window.lsShowTab = function(tab){
     btn.style.color=active?'#1d4ed8':'#64748b';
     btn.style.boxShadow=active?'0 1px 4px rgba(0,0,0,.1)':'none';
   });
+  if(tab==='photos') lsLoadPhotos();
+};
+
+// =====================================================================
+//  CHECKIN PHOTO GALLERY
+// =====================================================================
+let _lsPhotosCache = [];
+
+window.lsLoadPhotos = async function() {
+  const container = document.getElementById('ls-photos-list');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>';
+
+  const cutoff = Date.now() - 48 * 3600 * 1000;
+  const raw = await fbGet('/checkinPhotos').catch(() => null);
+  if (!raw || typeof raw !== 'object') {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">ยังไม่มีรูปสแกน</div>';
+    return;
+  }
+
+  _lsPhotosCache = [];
+  for (const [k, v] of Object.entries(raw)) {
+    if (!v) continue;
+    if (v.timestamp < cutoff) {
+      fbDelete('/checkinPhotos/' + k).catch(() => {}); // ลบ expired
+    } else {
+      _lsPhotosCache.push({ key: k, ...v });
+    }
+  }
+  _lsPhotosCache.sort((a, b) => b.timestamp - a.timestamp);
+
+  // อัปเดต filter พนักงาน
+  const empSel = document.getElementById('photo-filter-emp');
+  if (empSel) {
+    const names = [...new Set(_lsPhotosCache.map(p => p.empName))].sort();
+    empSel.innerHTML = '<option value="">พนักงานทุกคน</option>' +
+      names.map(n => `<option value="${n}">${n}</option>`).join('');
+  }
+  lsRenderPhotos();
+};
+
+window.lsRenderPhotos = function() {
+  const container = document.getElementById('ls-photos-list');
+  if (!container) return;
+  const typeF = document.getElementById('photo-filter-type')?.value || '';
+  const empF  = document.getElementById('photo-filter-emp')?.value  || '';
+  let list = _lsPhotosCache;
+  if (typeF) list = list.filter(p => p.type === typeF);
+  if (empF)  list = list.filter(p => p.empName === empF);
+
+  if (!list.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">ไม่พบรูปสแกน</div>';
+    return;
+  }
+  container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+    ${list.map(p => {
+      const d = new Date(p.timestamp);
+      const t = d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+      const dt = d.toLocaleDateString('th-TH',{day:'numeric',month:'short'});
+      const isIn = p.type === 'checkin';
+      return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;cursor:pointer;" onclick="lsViewPhoto('${p.key}')">
+        <div style="position:relative;">
+          <img src="${p.photo}" style="width:100%;height:130px;object-fit:cover;display:block;">
+          <div style="position:absolute;top:5px;right:5px;background:${isIn?'#16a34a':'#dc2626'};color:#fff;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:700;">
+            ${isIn?'เข้างาน':'ออกงาน'}
+          </div>
+        </div>
+        <div style="padding:7px 9px;">
+          <div style="font-size:12px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.empName}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:1px;">${dt} · ${t}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+};
+
+window.lsViewPhoto = function(key) {
+  const p = _lsPhotosCache.find(x => x.key === key);
+  if (!p) return;
+  const d = new Date(p.timestamp);
+  const t  = d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+  const dt = d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const isIn = p.type === 'checkin';
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div style="background:#1e293b;border-radius:20px;padding:20px;max-width:400px;width:100%;text-align:center;">
+    <img src="${p.photo}" style="width:100%;border-radius:12px;margin-bottom:14px;">
+    <div style="font-size:17px;font-weight:700;color:#f1f5f9;">${p.empName}</div>
+    <div style="font-size:12px;color:#94a3b8;margin-top:4px;">${dt}</div>
+    <div style="margin-top:10px;display:inline-block;background:${isIn?'#16a34a':'#dc2626'};color:#fff;border-radius:20px;padding:5px 16px;font-size:13px;font-weight:700;">
+      ${isIn?'🟢 เข้างาน':'🔴 ออกงาน'} ${t} น.
+    </div>
+    <button onclick="this.closest('div[style*=fixed]').remove()" style="display:block;width:100%;margin-top:14px;padding:10px;background:rgba(255,255,255,.12);color:#f1f5f9;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;">ปิด</button>
+  </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
 };
 
 // ---- Holiday settings ----
