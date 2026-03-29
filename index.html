@@ -9077,7 +9077,7 @@ async function _handleFaceCheckin(descriptor) {
     checkInTime:ts, otHours:0, wage, otPay:0, total:wage,
     gpsOk:true, distMeters:Math.round(gpsResult.dist), timestamp:Date.now(), checkInMethod:'face',
     locationId:_faceCheckinArea?.id||'', locationName:_faceCheckinArea?.name||'' };
-  _captureCheckinPhoto(emp._key, emp.name, 'checkin');
+  _captureCheckinPhoto(emp._key, emp.name, 'checkin', gpsResult);
   showSync();
   try {
     const res = await fbPush(`/attendance/${todayStr}`, rec);
@@ -9168,7 +9168,7 @@ async function _handleFaceCheckout(descriptor) {
   const _faceLocMismatch = checkinRec.locationId && _faceCoArea && checkinRec.locationId !== _faceCoArea.id;
 
   const now = new Date(), ts = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  _captureCheckinPhoto(matched.emp._key, matched.emp.name, 'checkout');
+  _captureCheckinPhoto(matched.emp._key, matched.emp.name, 'checkout', gpsResult);
   showSync();
   try {
     const extraFace = _faceLocMismatch ? { checkoutDiffLocation: true,
@@ -9198,7 +9198,7 @@ async function _handleFaceCheckout(descriptor) {
 }
 
 // ---- Capture face photo at checkin/checkout ----
-async function _captureCheckinPhoto(empId, empName, type) {
+async function _captureCheckinPhoto(empId, empName, type, gpsResult) {
   try {
     const v = document.getElementById('face-vid');
     if (!v || v.readyState < 2) return;
@@ -9210,6 +9210,10 @@ async function _captureCheckinPhoto(empId, empName, type) {
     await fbSet('/checkinPhotos/' + key, {
       empId, empName, type,
       photo,
+      lat: gpsResult?.rawLat || null,
+      lng: gpsResult?.rawLng || null,
+      locationName: gpsResult?.loc || '',
+      distMeters: gpsResult?.dist ? Math.round(gpsResult.dist) : null,
       timestamp: Date.now(),
       dateStr: todayStr
     });
@@ -14382,20 +14386,32 @@ window.lsRenderPhotos = function() {
       const t = d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
       const dt = d.toLocaleDateString('th-TH',{day:'numeric',month:'short'});
       const isIn = p.type === 'checkin';
-      return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;cursor:pointer;" onclick="lsViewPhoto('${p.key}')">
-        <div style="position:relative;">
+      return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+        <div style="position:relative;cursor:pointer;" onclick="lsViewPhoto('${p.key}')">
           <img src="${p.photo}" style="width:100%;height:130px;object-fit:cover;display:block;">
           <div style="position:absolute;top:5px;right:5px;background:${isIn?'#16a34a':'#dc2626'};color:#fff;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:700;">
             ${isIn?'เข้างาน':'ออกงาน'}
           </div>
         </div>
-        <div style="padding:7px 9px;">
+        <div style="padding:7px 9px 4px;">
           <div style="font-size:12px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.empName}</div>
           <div style="font-size:11px;color:#64748b;margin-top:1px;">${dt} · ${t}</div>
+        </div>
+        <div style="padding:4px 6px 7px;">
+          <button onclick="lsDeletePhoto('${p.key}')" style="width:100%;padding:5px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+            <i class="fas fa-trash-alt" style="margin-right:4px;"></i>ลบ
+          </button>
         </div>
       </div>`;
     }).join('')}
   </div>`;
+};
+
+window.lsDeletePhoto = async function(key) {
+  if (!confirm('ลบรูปนี้?')) return;
+  await fbDelete('/checkinPhotos/' + key).catch(() => {});
+  _lsPhotosCache = _lsPhotosCache.filter(p => p.key !== key);
+  lsRenderPhotos();
 };
 
 window.lsViewPhoto = function(key) {
@@ -14405,19 +14421,50 @@ window.lsViewPhoto = function(key) {
   const t  = d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   const dt = d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const isIn = p.type === 'checkin';
+  const hasGps = p.lat && p.lng;
+  const mapId = 'photo-map-' + Date.now();
+
   const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div style="background:#1e293b;border-radius:20px;padding:20px;max-width:400px;width:100%;text-align:center;">
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;';
+  ov.innerHTML = `<div style="background:#1e293b;border-radius:20px;padding:20px;max-width:420px;width:100%;text-align:center;">
     <img src="${p.photo}" style="width:100%;border-radius:12px;margin-bottom:14px;">
     <div style="font-size:17px;font-weight:700;color:#f1f5f9;">${p.empName}</div>
     <div style="font-size:12px;color:#94a3b8;margin-top:4px;">${dt}</div>
     <div style="margin-top:10px;display:inline-block;background:${isIn?'#16a34a':'#dc2626'};color:#fff;border-radius:20px;padding:5px 16px;font-size:13px;font-weight:700;">
       ${isIn?'🟢 เข้างาน':'🔴 ออกงาน'} ${t} น.
     </div>
+    ${hasGps ? `
+    <div style="margin-top:14px;border-radius:14px;overflow:hidden;border:2px solid rgba(255,255,255,.1);">
+      <div id="${mapId}" style="width:100%;height:200px;"></div>
+      <div style="background:#0f172a;padding:7px 12px;display:flex;align-items:center;gap:6px;">
+        <i class="fas fa-map-marker-alt" style="color:#ef4444;font-size:12px;"></i>
+        <span style="font-size:11px;color:#94a3b8;">${p.locationName||''}${p.distMeters!=null?' · ห่าง '+p.distMeters+' ม.':''}</span>
+        <span style="font-size:10px;color:#475569;margin-left:auto;">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span>
+      </div>
+    </div>` : `<div style="margin-top:12px;font-size:11px;color:#475569;">ไม่มีข้อมูล GPS</div>`}
     <button onclick="this.closest('div[style*=fixed]').remove()" style="display:block;width:100%;margin-top:14px;padding:10px;background:rgba(255,255,255,.12);color:#f1f5f9;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;">ปิด</button>
   </div>`;
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
   document.body.appendChild(ov);
+
+  // วาด Leaflet map หลัง DOM ready
+  if (hasGps) {
+    setTimeout(() => {
+      const mapEl = document.getElementById(mapId);
+      if (!mapEl || !window.L) return;
+      const map = L.map(mapId, { zoomControl:true, attributionControl:false }).setView([p.lat, p.lng], 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      // custom face icon
+      const icon = L.divIcon({
+        html: `<div style="width:38px;height:38px;border-radius:50%;background:#ef4444;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>`,
+        className: '', iconSize:[38,38], iconAnchor:[19,38]
+      });
+      const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+      marker.bindTooltip(`<b>${p.empName}</b><br>${isIn?'🟢 เข้างาน':'🔴 ออกงาน'} ${t} น.`, { permanent:true, direction:'top', offset:[0,-40] }).openTooltip();
+      // ทำให้ map resize ถูกต้อง
+      setTimeout(() => map.invalidateSize(), 100);
+    }, 80);
+  }
 };
 
 // ---- Holiday settings ----
