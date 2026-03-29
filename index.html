@@ -8610,6 +8610,9 @@ let _blinkState      = 'open';       // 'open' | 'closing'
 let _blinkCount      = 0;            // จำนวนกะพริบที่ยืนยันแล้ว
 let _earHistory      = [];           // rolling buffer สำหรับ smooth EAR
 
+// ---- ภาพที่จับตอนตรวจพบหน้า รอส่งหลัง GPS ผ่าน ----
+let _pendingFacePhoto = null;
+
 // ---- UI helpers ----
 function _showFaceHint(icon, text, color) {
   const banner = document.getElementById('face-hint-banner');
@@ -8883,10 +8886,11 @@ async function _faceDetectLoop() {
     return;
   }
 
-  // ✅ Confirmed
+  // ✅ Confirmed — จับภาพทันทีที่ตรวจพบหน้า ก่อน GPS
   setFaceRing('green');
   _setFaceNameBadge(`✅ ${matched.emp.name}`, 'green');
   _setFaceConfBar(confidence, true);
+  try { _pendingFacePhoto = canvas.toDataURL('image/jpeg', 0.65); } catch(_) { _pendingFacePhoto = null; }
   const avgDesc = _computeMeanDescriptor(_faceConfirmBuf.map(() => descriptor));
   _faceConfirmBuf = [];
   faceDetecting = false;
@@ -9200,12 +9204,9 @@ async function _handleFaceCheckout(descriptor) {
 // ---- Capture face photo at checkin/checkout ----
 async function _captureCheckinPhoto(empId, empName, type, gpsResult) {
   try {
-    const v = document.getElementById('face-vid');
-    if (!v || v.readyState < 2) return;
-    const c = document.createElement('canvas');
-    c.width = 320; c.height = 240;
-    c.getContext('2d').drawImage(v, 0, 0, 320, 240);
-    const photo = c.toDataURL('image/jpeg', 0.65);
+    const photo = _pendingFacePhoto || null;
+    _pendingFacePhoto = null;
+    if (!photo) return;
     const key = Date.now() + '_' + empId;
     await fbSet('/checkinPhotos/' + key, {
       empId, empName, type,
