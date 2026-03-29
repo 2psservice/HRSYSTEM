@@ -147,6 +147,25 @@ tr:nth-child(even){background:#f8fafc;}
 #face-bottom-panel{padding:14px 16px 4px;flex-shrink:0;}
 .face-status-box{padding:12px 16px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;transition:all .3s;line-height:1.5;}
 
+/* GPS checking overlay animation */
+@keyframes gps-pin-bounce{
+  0%,100%{transform:translateY(0);}
+  25%{transform:translateY(-22px);}
+  50%{transform:translateY(-10px);}
+  75%{transform:translateY(-18px);}
+}
+@keyframes gps-shadow-scale{
+  0%,100%{transform:scaleX(1);opacity:.35;}
+  25%{transform:scaleX(.45);opacity:.1;}
+  50%{transform:scaleX(.75);opacity:.25;}
+  75%{transform:scaleX(.55);opacity:.15;}
+}
+@keyframes gps-dot-pulse{
+  0%,100%{opacity:.3;transform:scale(1);}
+  50%{opacity:.7;transform:scale(1.4);}
+}
+#face-gps-overlay{display:none;position:absolute;inset:0;background:rgba(8,12,22,.92);flex-direction:column;align-items:center;justify-content:center;z-index:25;border-radius:inherit;}
+
 /* Confidence bar (checkin mode) */
 #face-conf-bar-wrap{margin:0 16px 10px;display:none;}
 #face-conf-bar-inner{height:5px;border-radius:4px;background:#1e2d40;overflow:hidden;}
@@ -327,6 +346,38 @@ tr:nth-child(even){background:#f8fafc;}
         </div>
         <div style="background:rgba(255,255,255,.15);border-radius:4px;height:4px;overflow:hidden;">
           <div id="face-size-fill" style="height:100%;background:linear-gradient(90deg,#f59e0b,#22c55e);border-radius:4px;width:0%;transition:width .15s;"></div>
+        </div>
+      </div>
+
+      <!-- GPS checking overlay -->
+      <div id="face-gps-overlay">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+          <!-- Pin bounce -->
+          <div style="animation:gps-pin-bounce 1.1s ease-in-out infinite;">
+            <svg width="80" height="100" viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="40" cy="86" rx="14" ry="5" fill="rgba(239,68,68,.25)"/>
+              <path d="M40 4C24.536 4 12 16.536 12 32c0 20 28 60 28 60s28-40 28-60C68 16.536 55.464 4 40 4z" fill="#ef4444"/>
+              <path d="M40 4C24.536 4 12 16.536 12 32c0 20 28 60 28 60s28-40 28-60C68 16.536 55.464 4 40 4z" fill="url(#pinGrad)" opacity=".35"/>
+              <circle cx="40" cy="32" r="13" fill="white" opacity=".95"/>
+              <defs>
+                <linearGradient id="pinGrad" x1="12" y1="4" x2="68" y2="92" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#fff" stop-opacity=".6"/>
+                  <stop offset="100%" stop-color="#000" stop-opacity=".1"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <!-- Shadow -->
+          <div style="width:36px;height:10px;background:rgba(239,68,68,.3);border-radius:50%;margin-top:-18px;animation:gps-shadow-scale 1.1s ease-in-out infinite;filter:blur(2px);"></div>
+          <!-- Dots loading -->
+          <div style="display:flex;gap:7px;margin-top:22px;">
+            <div style="width:7px;height:7px;background:#ef4444;border-radius:50%;animation:gps-dot-pulse 1.1s ease-in-out infinite 0s;"></div>
+            <div style="width:7px;height:7px;background:#ef4444;border-radius:50%;animation:gps-dot-pulse 1.1s ease-in-out infinite .2s;"></div>
+            <div style="width:7px;height:7px;background:#ef4444;border-radius:50%;animation:gps-dot-pulse 1.1s ease-in-out infinite .4s;"></div>
+          </div>
+          <!-- Text -->
+          <div style="margin-top:14px;color:#f1f5f9;font-size:15px;font-weight:700;font-family:Sarabun,sans-serif;letter-spacing:.02em;">กำลังตรวจสอบตำแหน่ง GPS</div>
+          <div style="color:#475569;font-size:12px;margin-top:5px;font-family:Sarabun,sans-serif;">โปรดรอสักครู่...</div>
         </div>
       </div>
 
@@ -6043,13 +6094,7 @@ async function _loadRecentHistory(empObj) {
 // ---- หน้าหลังสแกนสำเร็จ ----
 function _renderCheckinDone(wrap, empObj, alr) {
   const lateInfo = checkLate(empObj, alr.checkInTime, alr.locationId);
-  // ── LINE: แจ้งเตือนมาสาย ──────────────────────────────────────────
-  if (lateInfo.late) {
-    sendLineMsg(
-      `⏰ มาสาย ${lateInfo.minutesLate} นาที\n👤 ${empObj.name} (${empObj.dept||'-'})\n📍 ${alr.locationName||'-'} · เข้างาน ${alr.checkInTime} น.\n⏱ กำหนดเข้า ${lateInfo.workStart} น.`,
-      'late'
-    );
-  }
+  // ── LINE: รวมในสรุปรายวัน (ไม่ส่งทันที) ──────────────────────────
   const lateBanner = lateInfo.late ? `
     <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);border-radius:16px;padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(220,38,38,.3);">
       <div style="width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -6503,11 +6548,7 @@ async function handleEarlyOut(empObj, checkOutTime, locationId) {
   const mins = eo.minutesEarly % 60;
   const timeStr = hrs > 0 ? `${hrs} ชม. ${mins} น.` : `${mins} นาที`;
 
-  // ── LINE: แจ้งเตือนออกก่อนเวลา ────────────────────────────────────
-  sendLineMsg(
-    `🏃 ออกก่อนเวลา ${timeStr}\n👤 ${empObj.name} (${empObj.dept||'-'})\n⏱ กำหนดออก ${eo.workEnd} น.\n🔻 หักคะแนน -2 คะแนน`,
-    'earlyOut'
-  );
+  // ── LINE: รวมในสรุปรายวัน (ไม่ส่งทันที) ──────────────────────────
   // ── แจ้งเตือนบนหน้าจอพนักงาน ─────────────────────────────────
   const toast = document.createElement('div');
   toast.style.cssText = `
@@ -7544,72 +7585,74 @@ async function renderEmpHome(){
       </button>
     </div>
 
-    <!-- Shift / schedule card -->
-    <div style="background:${cardBg};border-radius:20px;padding:20px 18px;margin-bottom:12px;box-shadow:0 4px 20px ${cardShadow};text-align:center;">
-      <!-- Shift badge + day -->
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px;">
-        <span style="background:rgba(255,255,255,.25);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">${shiftLabel}</span>
-        <span style="font-size:12px;font-weight:600;color:${cardTextSub};">${isHoliday?'วันหยุด':'วัน'+todayLabel}</span>
-      </div>
-      <!-- Date -->
-      <div style="font-size:12px;color:${cardTextMuted};margin-bottom:10px;">${new Date().toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'})}</div>
-      <!-- Live clock -->
-      <div id="emp-live-clock" style="font-size:52px;font-weight:900;color:${cardTextPrimary};letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums;margin-bottom:2px;">--:--</div>
-      <div id="emp-live-sec" style="font-size:13px;color:${cardTextMuted};font-weight:600;letter-spacing:.02em;margin-bottom:18px;">-- วินาที</div>
-      <!-- Check-in / out row -->
-      <div style="display:flex;justify-content:center;align-items:stretch;gap:0;margin-bottom:16px;background:${cardSubBg};border-radius:14px;overflow:hidden;">
-        <div style="flex:1;padding:12px 8px;text-align:center;">
-          <div style="font-size:10px;color:${cardTextMuted};margin-bottom:3px;font-weight:600;letter-spacing:.04em;">กะเข้างาน</div>
-          <div style="font-size:16px;font-weight:800;color:${cardTextPrimary};">${shiftIn}</div>
-          <div style="font-size:12px;font-weight:700;color:${cardTextSub};margin-top:2px;">${tr&&tr.checkInTime?'✓ '+tr.checkInTime:'ยังไม่เข้า'}</div>
-        </div>
-        <div style="width:1px;background:rgba(255,255,255,.2);"></div>
-        <div style="flex:1;padding:12px 8px;text-align:center;">
-          <div style="font-size:10px;color:${cardTextMuted};margin-bottom:3px;font-weight:600;letter-spacing:.04em;">กะออกงาน</div>
-          <div style="font-size:16px;font-weight:800;color:${cardTextPrimary};">${shiftOut}</div>
-          <div style="font-size:12px;font-weight:700;color:${cardTextSub};margin-top:2px;">${tr&&tr.checkOutTime?'✓ '+tr.checkOutTime:'ยังไม่ออก'}</div>
-        </div>
-      </div>
-      <!-- Progress bar -->
-      <div style="background:rgba(255,255,255,.2);border-radius:20px;height:8px;margin-bottom:6px;overflow:hidden;">
-        <div style="height:8px;border-radius:20px;background:rgba(255,255,255,.85);width:${pct}%;transition:width 1s;"></div>
-      </div>
-      <div style="font-size:11px;color:${cardTextMuted};">เวลาทำงาน ${pct}%</div>
-    </div>
+    <!-- Main card: Clock + Check-in (รวมไว้ในการ์ดเดียว) -->
+    <div style="background:${cardBg};border-radius:24px;padding:18px 16px 16px;margin-bottom:12px;box-shadow:0 4px 20px ${cardShadow};">
 
-    <!-- Check-in button area -->
-    <div style="background:linear-gradient(135deg,#e0f2fe,#bfdbfe);border-radius:24px;padding:28px 16px 20px;margin-bottom:12px;box-shadow:0 2px 12px rgba(59,130,246,.1);display:flex;flex-direction:column;align-items:center;">
-      <!-- Big center checkin button only -->
-      <div style="display:flex;align-items:center;justify-content:center;margin-bottom:18px;width:100%;">
-        <button onclick="${goCheckin}" style="display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;border:none;background:transparent;font-family:Sarabun,sans-serif;position:relative;">
-          <div style="width:90px;height:90px;border-radius:50%;background:linear-gradient(135deg,#0ea5e9,#3b82f6);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(14,165,233,.4),0 0 0 8px rgba(14,165,233,.15);transition:transform .15s;" onmousedown="this.style.transform='scale(.93)'" onmouseup="this.style.transform='scale(1)'" ontouchstart="this.style.transform='scale(.93)'" ontouchend="this.style.transform='scale(1)'">
-            <i class="fas fa-map-marker-alt" style="color:#fff;font-size:36px;"></i>
+      <!-- แถวบน: นาฬิกา ซ้าย / วันที่+เวลากะ ขวา -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <!-- นาฬิกา -->
+        <div>
+          <div id="emp-live-clock" style="font-size:48px;font-weight:900;color:${cardTextPrimary};letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums;">--:--</div>
+          <div id="emp-live-sec" style="font-size:12px;color:${cardTextMuted};font-weight:600;margin-top:2px;">-- วินาที</div>
+        </div>
+        <!-- วันที่ + เวลาเข้า-ออก -->
+        <div style="text-align:right;">
+          <div style="font-size:11px;color:${cardTextMuted};margin-bottom:4px;">${new Date().toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
+          <div style="background:${cardSubBg};border-radius:10px;padding:6px 10px;display:inline-block;">
+            <div style="display:flex;gap:12px;align-items:center;">
+              <div style="text-align:center;">
+                <div style="font-size:9px;color:${cardTextMuted};font-weight:600;">เข้า ${shiftIn}</div>
+                <div style="font-size:12px;font-weight:800;color:${tr&&tr.checkInTime?cardTextPrimary:cardTextMuted};">${tr&&tr.checkInTime?'✓ '+tr.checkInTime:'--:--'}</div>
+              </div>
+              <div style="width:1px;height:28px;background:rgba(255,255,255,.2);"></div>
+              <div style="text-align:center;">
+                <div style="font-size:9px;color:${cardTextMuted};font-weight:600;">ออก ${shiftOut}</div>
+                <div style="font-size:12px;font-weight:800;color:${tr&&tr.checkOutTime?cardTextPrimary:cardTextMuted};">${tr&&tr.checkOutTime?'✓ '+tr.checkOutTime:'--:--'}</div>
+              </div>
+            </div>
           </div>
-          <span style="font-size:14px;font-weight:700;color:#1d4ed8;">${tr&&tr.checkInTime?(tr.checkOutTime?'ออกงานแล้ว':'เข้างานแล้ว'):'เข้างาน'}</span>
-        </button>
-      </div>
-      <!-- Location label -->
-      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1d4ed8;font-weight:600;">
-        <i class="fas fa-map-marker-alt" style="font-size:12px;"></i>
-        <span>${e.dept||'บริษัท 2PS Service'}</span>
+        </div>
       </div>
 
-      <!-- ปุ่มลาระหว่างวัน — แสดงเมื่อเช็คอินแล้ว แต่ยังไม่เช็คเอาต์ -->
-      ${tr&&tr.checkInTime&&!tr.checkOutTime?`
-      <div style="margin-top:14px;width:100%;max-width:320px;">
-        <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-align:center;margin-bottom:8px;opacity:.7;">หรือต้องการลาระหว่างวัน?</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-          <button onclick="openMidDayLeave('half')" style="background:#fff;border:1.5px solid #e0f2fe;border-radius:12px;padding:8px 4px;font-size:11px;font-weight:700;color:#0369a1;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:4px;">
-            <span style="font-size:18px;">🌗</span>ลาครึ่งวัน
-          </button>
-          <button onclick="openMidDayLeave('sick')" style="background:#fff;border:1.5px solid #fde68a;border-radius:12px;padding:8px 4px;font-size:11px;font-weight:700;color:#92400e;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:4px;">
-            <span style="font-size:18px;">🤒</span>ลาป่วย
-          </button>
-          <button onclick="openMidDayLeave('personal')" style="background:#fff;border:1.5px solid #d1fae5;border-radius:12px;padding:8px 4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:4px;">
-            <span style="font-size:18px;">🏃</span>ลากิจ
-          </button>
-        </div>
-      </div>`:''}
+      <!-- เส้นคั่น -->
+      <div style="height:1px;background:rgba(255,255,255,.15);margin-bottom:14px;"></div>
+
+      <!-- ปุ่มเช็คอิน/เอาต์ — ตรงกลาง สีเขียว/แดง -->
+      ${(()=>{
+        const isCheckedIn  = tr && tr.checkInTime && !tr.checkOutTime;
+        const isDone       = tr && tr.checkInTime && tr.checkOutTime;
+        const btnBg        = isDone
+          ? 'rgba(255,255,255,.18)'
+          : isCheckedIn
+            ? 'linear-gradient(135deg,#ef4444,#dc2626)'
+            : 'linear-gradient(135deg,#22c55e,#16a34a)';
+        const btnShadow    = isDone
+          ? 'none'
+          : isCheckedIn
+            ? '0 6px 20px rgba(239,68,68,.4)'
+            : '0 6px 20px rgba(34,197,94,.4)';
+        const btnIcon      = isCheckedIn ? 'fa-sign-out-alt' : 'fa-sign-in-alt';
+        const btnLabel     = isDone ? 'เสร็จสิ้นวันนี้' : isCheckedIn ? 'ลงชื่อออกงาน' : 'ลงชื่อเข้างาน';
+        return `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+        <button onclick="${goCheckin}" style="width:100%;cursor:pointer;border:none;background:${btnBg};border-radius:18px;padding:14px 20px;font-family:Sarabun,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:${btnShadow};transition:transform .15s,opacity .15s;" onmousedown="this.style.transform='scale(.97)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.97)'" ontouchend="this.style.transform=''">
+          <i class="fas ${btnIcon}" style="color:#fff;font-size:22px;"></i>
+          <div style="text-align:left;">
+            <div style="font-size:16px;font-weight:800;color:#fff;">${btnLabel}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:1px;display:flex;align-items:center;gap:4px;"><i class="fas fa-map-marker-alt" style="font-size:10px;"></i>${e.dept||'บริษัท 2PS Service'}</div>
+          </div>
+        </button>
+        ${isCheckedIn?`
+        <div style="width:100%;">
+          <div style="font-size:10px;color:${cardTextMuted};text-align:center;margin-bottom:6px;">หรือต้องการลาระหว่างวัน?</div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="openMidDayLeave('half')" style="flex:1;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:6px 2px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:15px;">🌗</span>ลาครึ่งวัน</button>
+            <button onclick="openMidDayLeave('sick')"  style="flex:1;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:6px 2px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:15px;">🤒</span>ลาป่วย</button>
+            <button onclick="openMidDayLeave('personal')" style="flex:1;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:6px 2px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:15px;">🏃</span>ลากิจ</button>
+          </div>
+        </div>`:''}
+      </div>`;
+      })()}
     </div>
 
     <!-- Icon menu grid -->
@@ -7656,15 +7699,6 @@ async function renderEmpHome(){
           <span class="emp-menu-label">สลิปเงินเดือน</span>
         </button>
       </div>
-    </div>
-
-    <!-- Monthly summary strip -->
-    <div onclick="${goHist}" style="background:#fff;border-radius:16px;padding:14px 18px;box-shadow:0 1px 8px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
-      <div>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;">สรุปเดือนนี้</div>
-        <div style="font-size:15px;font-weight:700;color:#1e293b;">${mD} วัน · ฿${mW.toLocaleString()}</div>
-      </div>
-      <i class="fas fa-chevron-right" style="color:#cbd5e1;"></i>
     </div>
 
   </div>`;
@@ -7929,12 +7963,7 @@ window.submitLeaveReq = async function(){
       reason, status:'pending',
       submittedAt:new Date().toISOString()
     });
-    // ── LINE: แจ้งเตือนยื่นลา ──────────────────────────────────────
-    const _dateRange = startDate===endDate ? startDate : `${startDate} ถึง ${endDate}`;
-    sendLineMsg(
-      `🏖️ คำขอลาใหม่ รอการอนุมัติ\n👤 ${e.name} (${e.dept||'-'})\n📄 ประเภท: ${type}\n📅 ${_dateRange} (${days} วัน)${totalDeduct>0?'\n🔻 หักคะแนน '+totalDeduct+' คะแนน':''}\n📝 ${reason}`,
-      'leave'
-    );
+    // ── LINE: รวมในสรุปรายวัน (ไม่ส่งทันที) ──────────────────────────
     closeModal();
     // Show success
     const mc=document.getElementById('emp-home-body');
@@ -8383,6 +8412,14 @@ function setFaceStatus(type, msg) {
     el.innerHTML = msg;
   }
 }
+function showGpsOverlay() {
+  const el = document.getElementById('face-gps-overlay');
+  if (el) el.style.display = 'flex';
+}
+function hideGpsOverlay() {
+  const el = document.getElementById('face-gps-overlay');
+  if (el) el.style.display = 'none';
+}
 function setFaceRing(color) {
   const r = document.getElementById('face-ring');
   if (!r) return;
@@ -8488,6 +8525,7 @@ async function _startFaceCam() {
   // Reset all security buffers
   _faceConfirmBuf = []; _faceRegBuf = []; _faceRegSampling = false; _faceFrameCount = 0;
   _faceMotionBuf = []; _spoofWarnings = 0; _spoofLocked = false;
+  _livenessCleared = false; _blinkState = 'open'; _blinkCount = 0; _earHistory = [];
   _regStep = 0; _regStepDescs = [];
   _hideFaceHint();
   const sizeBar = document.getElementById('face-size-bar-wrap');
@@ -8543,8 +8581,14 @@ const FACE_LIVENESS_FRAMES   = 3;     // ต้องผ่าน 3 เฟรม
 
 // ---- Anti-spoof constants ----
 const SPOOF_MOTION_FRAMES    = 6;     // ตรวจ motion ใน 6 เฟรม
-const SPOOF_MOTION_THRESH    = 0.003; // ต้องขยับเล็กน้อย — รูปนิ่งไม่ผ่าน
-const SPOOF_BLUR_THRESH      = 60;    // กล้องธรรมดาผ่าน แต่รูปบนจอโทรศัพท์ไม่ผ่าน
+const SPOOF_MOTION_THRESH    = 0.008; // ขยับจริงเท่านั้น — รูปบนหน้าจอมือถือไม่ผ่าน
+const SPOOF_BLUR_THRESH      = 120;   // สูงขึ้น — จอมือถือคมชัดแต่ยังต่ำกว่ากล้องจริง
+
+// ---- EAR Blink Liveness constants ----
+const EAR_BLINK_THRESH       = 0.24;  // EAR ต่ำกว่านี้ = ตาหลับ (threshold กว้างขึ้น)
+const EAR_OPEN_THRESH        = 0.28;  // EAR สูงกว่านี้ = ตาเปิดหลัง blink
+const EAR_SMOOTH_FRAMES      = 3;     // หาค่าเฉลี่ย 3 เฟรม ลด noise
+const LIVENESS_BLINKS_NEEDED = 1;     // ต้องกะพริบ 1 ครั้งก่อนสแกนผ่าน
 
 let _faceConfirmBuf  = [];
 let _faceFrameCount  = 0;            // นับเฟรมทั้งหมดตั้งแต่เปิดกล้อง (liveness)
@@ -8559,6 +8603,12 @@ const REG_STEP_FRAMES = 3;           // 3 frames per step — สมดุลร
 let _faceMotionBuf   = [];           // เก็บ descriptor ล่าสุดสำหรับ motion check
 let _spoofWarnings   = 0;            // นับครั้งที่ตรวจพบการทุจริต
 let _spoofLocked     = false;        // ล็อกเมื่อตรวจพบซ้ำหลายครั้ง
+
+// ---- EAR Liveness tracking ----
+let _livenessCleared = false;        // ผ่าน blink challenge แล้วหรือยัง
+let _blinkState      = 'open';       // 'open' | 'closing'
+let _blinkCount      = 0;            // จำนวนกะพริบที่ยืนยันแล้ว
+let _earHistory      = [];           // rolling buffer สำหรับ smooth EAR
 
 // ---- UI helpers ----
 function _showFaceHint(icon, text, color) {
@@ -8630,6 +8680,21 @@ function _checkDescriptorMotion(desc) {
   _faceMotionBuf.push(desc);
   if (_faceMotionBuf.length > SPOOF_MOTION_FRAMES) _faceMotionBuf.shift();
   return dist > SPOOF_MOTION_THRESH; // true = มี motion (ปกติ)
+}
+
+// ---- Compute Eye Aspect Ratio (EAR) for blink liveness detection ----
+// ใช้ face-api.js 68-point landmarks
+// ตาซ้าย: indices 36-41 | ตาขวา: indices 42-47
+function _computeEAR(landmarks) {
+  try {
+    const pts = landmarks.positions;
+    const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+    // EAR = (|p2-p6| + |p3-p5|) / (2*|p1-p4|)  — สูตรมาตรฐาน
+    const earEye = (p) => (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3]));
+    const lp = [36, 37, 38, 39, 40, 41].map(i => pts[i]); // ตาซ้าย
+    const rp = [42, 43, 44, 45, 46, 47].map(i => pts[i]); // ตาขวา
+    return (earEye(lp) + earEye(rp)) / 2; // ค่าเฉลี่ย 2 ข้าง
+  } catch { return 0.3; } // fallback = ตาเปิด
 }
 
 // ============================================================
@@ -8710,7 +8775,7 @@ async function _faceDetectLoop() {
   const blurScore = _computeBlurScore(canvas);
   if (blurScore < SPOOF_BLUR_THRESH && _faceFrameCount > FACE_LIVENESS_FRAMES) {
     _spoofWarnings++;
-    if (_spoofWarnings >= 10) {
+    if (_spoofWarnings >= 5) {
       _spoofLocked = true;
       faceDetecting = false;
       _showSpoofOverlay('🚫 ตรวจพบการใช้รูปภาพ/วิดีโอ\nไม่อนุญาตให้เช็คชื่อ');
@@ -8719,7 +8784,7 @@ async function _faceDetectLoop() {
       return;
     }
     setFaceRing('red');
-    setFaceStatus('warn', `⚠️ ภาพไม่ชัด — ห้ามใช้รูปภาพหรือวิดีโอคอล (${_spoofWarnings}/10)`);
+    setFaceStatus('warn', `⚠️ ภาพไม่ชัด — ห้ามใช้รูปภาพหรือวิดีโอคอล (${_spoofWarnings}/5)`);
     await new Promise(r => setTimeout(r, 500));
     if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
     return;
@@ -8729,7 +8794,7 @@ async function _faceDetectLoop() {
   const hasMotion = _checkDescriptorMotion(descriptor);
   if (_faceFrameCount > SPOOF_MOTION_FRAMES + 2 && !hasMotion) {
     _spoofWarnings++;
-    if (_spoofWarnings >= 10) {
+    if (_spoofWarnings >= 5) {
       _spoofLocked = true;
       faceDetecting = false;
       _showSpoofOverlay('🚫 ตรวจพบการใช้รูปภาพนิ่ง\nไม่อนุญาตให้เช็คชื่อ');
@@ -8738,14 +8803,14 @@ async function _faceDetectLoop() {
       return;
     }
     setFaceRing('yellow');
-    setFaceStatus('warn', `⚠️ กรุณาขยับใบหน้าเล็กน้อย (${_spoofWarnings}/10)`);
+    setFaceStatus('warn', `⚠️ กรุณาขยับใบหน้าเล็กน้อย (${_spoofWarnings}/5)`);
     await new Promise(r => setTimeout(r, 400));
     if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
     return;
   }
 
-  // Motion detected — reset spoof warnings gradually
-  if (hasMotion && _spoofWarnings > 0) _spoofWarnings = Math.max(0, _spoofWarnings - 1);
+  // Motion detected — reset spoof warnings (ไม่ลด เพื่อป้องกันคนสลับรูป)
+  // Note: ไม่ reset เพื่อให้คะแนนสะสมถาวร ป้องกันการหลอกแบบสลับ
   // ============================================================
   if (faceModalMode === 'register' || faceModalMode === 'emp-register') {
     // ============================================================
@@ -8822,6 +8887,29 @@ async function _faceDetectLoop() {
   if (_faceFrameCount < FACE_LIVENESS_FRAMES) {
     setFaceRing('blue');
     setFaceStatus('info', `🎥 กำลังเริ่มสแกน... (${_faceFrameCount}/${FACE_LIVENESS_FRAMES})`);
+    if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
+    return;
+  }
+
+  // ---- EAR Blink Liveness Challenge — ต้องกะพริบตาก่อนผ่าน ----
+  if (!_livenessCleared) {
+    // Smooth EAR ด้วย rolling average เพื่อลด noise
+    const rawEar = _computeEAR(det.landmarks);
+    _earHistory.push(rawEar);
+    if (_earHistory.length > EAR_SMOOTH_FRAMES) _earHistory.shift();
+    const ear = _earHistory.reduce((s, v) => s + v, 0) / _earHistory.length;
+
+    if (_blinkState === 'open' && ear < EAR_BLINK_THRESH) {
+      _blinkState = 'closing'; // ตาเริ่มหลับ
+    } else if (_blinkState === 'closing' && ear > EAR_OPEN_THRESH) {
+      _blinkCount++;           // กะพริบสำเร็จ 1 ครั้ง
+      _blinkState = 'open';
+      if (_blinkCount >= LIVENESS_BLINKS_NEEDED) {
+        _livenessCleared = true; // ผ่าน liveness — ดำเนินการสแกนต่อ
+      }
+    }
+    setFaceRing('blue');
+    setFaceStatus('info', `👁 กรุณากะพริบตา 1 ครั้ง`);
     if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
     return;
   }
@@ -8937,7 +9025,23 @@ async function _handleFaceRegisterMulti(descriptors) {
     setFaceStatus('success', msg);
     setTimeout(() => {
       stopFaceCam();
-      if (isEmpSelf) pgEmpFaceReg();
+      if (isEmpSelf) {
+        if (window._faceRegReturnToCheckin) {
+          // ลงทะเบียนเสร็จแล้ว → กลับไปหน้าสแกนเข้างานอัตโนมัติ
+          window._faceRegReturnToCheckin = false;
+          setFaceStatus('info', '✅ ลงทะเบียนเสร็จแล้ว กำลังกลับไปสแกนเข้างาน...');
+          setTimeout(() => {
+            document.getElementById('face-modal')?.classList.remove('active');
+            const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+            const btn = isMob
+              ? document.querySelector('[data-mob-tab=checkin-page]')
+              : document.querySelector('[data-tab=checkin-page]');
+            if (btn) goTab('checkin-page', btn);
+          }, 1200);
+        } else {
+          pgEmpFaceReg();
+        }
+      }
     }, 2000);
   } catch(e) {
     hideSync();
@@ -8958,9 +9062,27 @@ async function _handleFaceCheckin(descriptor) {
   setFaceStatus('info', '🔍 กำลังค้นหาใบหน้าในระบบ...');
   const matched = _matchFace(descriptor);
   if (!matched) {
-    setFaceRing('red');
-    setFaceStatus('error', '❌ ไม่พบใบหน้าในระบบ — กรุณาลงทะเบียนก่อน');
-    setTimeout(() => { faceDetecting = true; faceRafHandle = requestAnimationFrame(_faceDetectLoop); }, 3000);
+    // ตรวจว่า employee ที่ login อยู่มีใบหน้าลงทะเบียนไว้ไหม
+    const selfEmp = db.employees.find(e => e._key === CU.id);
+    const hasSelfFace = selfEmp && (
+      (Array.isArray(selfEmp.faceDescriptors) && selfEmp.faceDescriptors.some(d => Array.isArray(d) && d.length === 128)) ||
+      (Array.isArray(selfEmp.faceDescriptor)  && selfEmp.faceDescriptor.length === 128)
+    );
+    if (!hasSelfFace) {
+      // ยังไม่เคยลงทะเบียน → พาไปลงทะเบียนอัตโนมัติ แล้วกลับมาสแกนเข้างาน
+      setFaceRing('red');
+      setFaceStatus('error', '📷 ยังไม่ได้ลงทะเบียนใบหน้า<br><span style="font-size:11px;">กำลังพาไปลงทะเบียน...</span>');
+      setTimeout(() => {
+        stopFaceCam();
+        window._faceRegReturnToCheckin = true; // flag เพื่อกลับมาสแกนเข้างาน
+        pgEmpFaceReg();
+      }, 1800);
+    } else {
+      // ลงทะเบียนแล้วแต่จำหน้าไม่ได้ (แสงน้อย / มุมผิด)
+      setFaceRing('red');
+      setFaceStatus('error', '❌ จำหน้าไม่ได้ — ลองปรับแสงหรือมุมกล้อง');
+      setTimeout(() => { faceDetecting = true; faceRafHandle = requestAnimationFrame(_faceDetectLoop); }, 3000);
+    }
     return;
   }
   setFaceStatus('info', `✅ พบ: ${matched.emp.name}<br><span style="font-size:11px;opacity:.8;">กำลังตรวจสอบ Device Binding...</span>`);
@@ -8974,8 +9096,9 @@ async function _handleFaceCheckin(descriptor) {
   }
 
   // ---- ตรวจ GPS + Anti-Fake ----
-  setFaceStatus('info', '📡 กำลังตรวจสอบตำแหน่ง GPS...');
+  showGpsOverlay();
   const gpsResult = await _getGpsResult();
+  hideGpsOverlay();
   if (!gpsResult.available) {
     setFaceRing('red');
     setFaceStatus('error', `🚫 ไม่สามารถดึงตำแหน่งได้<br><span style="font-size:11px;">กรุณาเปิด GPS</span>`);
@@ -9071,8 +9194,9 @@ async function _handleFaceCheckout(descriptor) {
   }
 
   // ---- ตรวจ GPS ก่อน ----
-  setFaceStatus('info', '📍 กำลังตรวจสอบตำแหน่ง...');
+  showGpsOverlay();
   const gpsResult = await _getGpsResult();
+  hideGpsOverlay();
   if (!gpsResult.available) {
     setFaceRing('red');
     setFaceStatus('error', `🚫 ไม่สามารถดึงตำแหน่งได้<br><span style="font-size:11px;">กรุณาเปิด GPS และอนุญาตการเข้าถึงตำแหน่ง</span>`);
@@ -10719,7 +10843,7 @@ async function sendLineMsg(text, eventKey) {
   } catch(e) { console.warn('[LINE]', e.message); }
 }
 
-// ตรวจลืมเข้า/ออกงาน — เรียกจาก poll timer
+// ส่งสรุปการทำงานรายวัน 1 ครั้ง เวลา 12:00 — เรียกจาก poll timer
 async function _checkForgotAttendance() {
   try {
     const cfg = await _getLineConfig();
@@ -10728,39 +10852,113 @@ async function _checkForgotAttendance() {
     const nowMin = now.getHours()*60 + now.getMinutes();
     const todayKey = todayStr;
 
-    // ── ลืมเข้างาน: แจ้งเตือน 1 ครั้งต่อวัน ตอน checkInAlertTime ──
-    if (cfg.notify_forgotCheckin !== false && cfg.checkInAlertTime) {
-      const [ah, am] = cfg.checkInAlertTime.split(':').map(Number);
-      const alertMin = ah*60 + am;
-      const flagKey = 'lnForgotCI_' + todayKey;
-      if (nowMin >= alertMin && nowMin <= alertMin+9 && !sessionStorage.getItem(flagKey)) {
-        sessionStorage.setItem(flagKey, '1');
-        await loadAttendanceDate(todayKey);
-        const checkedInIds = new Set(Object.values(db.attendance[todayKey]||{}).filter(r=>r.checkInTime).map(r=>r.empId));
-        const forgot = db.employees.filter(e => !checkedInIds.has(e._key));
-        if (forgot.length > 0) {
-          const names = forgot.slice(0,15).map(e=>`• ${e.name}`).join('\n');
-          await sendLineMsg(`🔔 ยังไม่ลงชื่อเข้างาน (${forgot.length} คน)\n${names}${forgot.length>15?'\n...และอีก '+(forgot.length-15)+' คน':''}\n📅 ${todayKey} · ณ ${cfg.checkInAlertTime} น.`);
-        }
-      }
-    }
+    // ── ตรวจวันหยุดประจำสัปดาห์ + วันหยุดพิเศษ → ข้ามไม่ส่ง ─────────
+    const holRaw = await fbGet('/settings/holidays').catch(() => null);
+    const weeklyHol = new Set((holRaw?.weekly || []).map(Number));
+    const specialHol = new Set(Object.values(holRaw?.special || {}).map(h => h?.date).filter(Boolean));
+    const todayDow = now.getDay(); // 0=อา … 6=ส
+    if (weeklyHol.has(todayDow) || specialHol.has(todayKey)) return; // วันหยุด → ไม่ส่ง
 
-    // ── ลืมออกงาน: แจ้งเตือน 1 ครั้งต่อวัน ตอน checkOutAlertTime ──
-    if (cfg.notify_forgotCheckout !== false && cfg.checkOutAlertTime) {
-      const [bh, bm] = cfg.checkOutAlertTime.split(':').map(Number);
-      const alertMin2 = bh*60 + bm;
-      const flagKey2 = 'lnForgotCO_' + todayKey;
-      if (nowMin >= alertMin2 && nowMin <= alertMin2+9 && !sessionStorage.getItem(flagKey2)) {
-        sessionStorage.setItem(flagKey2, '1');
-        await loadAttendanceDate(todayKey);
-        const forgot2 = Object.values(db.attendance[todayKey]||{}).filter(r=>r.checkInTime&&!r.checkOutTime);
-        if (forgot2.length > 0) {
-          const names2 = forgot2.slice(0,15).map(r=>`• ${r.empName||r.empId}`).join('\n');
-          await sendLineMsg(`⚠️ ยังไม่ลงชื่อออกงาน (${forgot2.length} คน)\n${names2}${forgot2.length>15?'\n...และอีก '+(forgot2.length-15)+' คน':''}\n📅 ${todayKey} · ณ ${cfg.checkOutAlertTime} น.`);
+    // ── สรุปรายวัน: ส่ง 1 ครั้ง ตามเวลาที่กำหนด (default 12:00) ────────
+    const summaryTime = cfg.checkInAlertTime || '12:00';
+    const [sh, sm] = summaryTime.split(':').map(Number);
+    const summaryMin = sh*60 + sm;
+    const flagKey = 'lnDailySummary_' + todayKey;
+
+    if (nowMin >= summaryMin && nowMin <= summaryMin+9 && !sessionStorage.getItem(flagKey)) {
+      sessionStorage.setItem(flagKey, '1');
+      await loadAttendanceDate(todayKey);
+
+      const recs = Object.values(db.attendance[todayKey] || {}).filter(r => r.checkInTime);
+      const checkedInEmpIds = new Set(recs.map(r => r.empId));
+
+      // ── จำนวนมาทำงาน + แยกตามสถานที่ ──────────────────────────────
+      const totalCome = recs.length;
+      const locMap = {};
+      recs.forEach(r => {
+        let locName = r.locationName || '';
+        if (!locName && r.locationId) {
+          const loc = gpsLocations.find(l => l.id === r.locationId);
+          locName = loc?.name || loc?.label || r.locationId || 'ไม่ระบุ';
         }
+        if (!locName) locName = 'ไม่ระบุสถานที่';
+        locMap[locName] = (locMap[locName] || 0) + 1;
+      });
+      const locLines = Object.entries(locMap)
+        .sort((a,b) => b[1]-a[1])
+        .map(([name, cnt]) => `   📍 ${name} ${cnt} คน`);
+
+      // ── มาสาย ────────────────────────────────────────────────────────
+      const lateList = [];
+      recs.forEach(r => {
+        const emp = db.employees.find(e => e._key === r.empId);
+        if (!emp) return;
+        const li = checkLate(emp, r.checkInTime, r.locationId);
+        if (li.late) lateList.push(`• ${emp.name} (มาสาย ${li.minutesLate} นาที)`);
+      });
+
+      // ── วันลา (ไม่ rejected ที่ครอบคลุมวันนี้) ──────────────────────
+      const leaveList = [];
+      const leaveEmpIds = new Set(); // track empId ที่ลาวันนี้
+      const allLeaves = await fbGet('/leaveRequests').catch(() => null);
+      if (allLeaves) {
+        Object.entries(allLeaves).forEach(([empId, empLeaves]) => {
+          Object.values(empLeaves || {}).forEach(lv => {
+            if (lv.status === 'rejected') return;
+            const start = lv.startDate || '';
+            const end   = lv.endDate || lv.startDate || '';
+            if (start <= todayKey && end >= todayKey) {
+              leaveList.push(`• ${lv.empName || '-'} (${lv.type || 'ลา'})`);
+              leaveEmpIds.add(empId);
+            }
+          });
+        });
       }
+
+      // ── ขาดงาน: ไม่มีข้อมูลเข้างาน และไม่มีใบลา ────────────────────
+      const absentList = db.employees
+        .filter(e => !checkedInEmpIds.has(e._key) && !leaveEmpIds.has(e._key))
+        .map(e => `• ${e.name}`);
+
+      // ── รวมเป็น 1 ข้อความ ────────────────────────────────────────────
+      const thDate = now.toLocaleDateString('th-TH', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+      const lines = [];
+      lines.push(`📊 สรุปการทำงาน ${thDate}`);
+      lines.push(`─────────────────────`);
+
+      // มาทำงาน + สถานที่
+      lines.push(`\n✅ มาทำงาน ${totalCome} คน`);
+      locLines.forEach(l => lines.push(l));
+
+      // มาสาย
+      if (lateList.length) {
+        lines.push(`\n⏰ มาสาย (${lateList.length} คน)`);
+        lateList.slice(0,15).forEach(l => lines.push(l));
+        if (lateList.length > 15) lines.push(`   ...และอีก ${lateList.length-15} คน`);
+      }
+
+      // วันลา
+      if (leaveList.length) {
+        lines.push(`\n🏖️ วันลา (${leaveList.length} คน)`);
+        leaveList.slice(0,15).forEach(l => lines.push(l));
+        if (leaveList.length > 15) lines.push(`   ...และอีก ${leaveList.length-15} คน`);
+      }
+
+      // ขาดงาน
+      if (absentList.length) {
+        lines.push(`\n❌ ขาดงาน (${absentList.length} คน)`);
+        absentList.slice(0,15).forEach(l => lines.push(l));
+        if (absentList.length > 15) lines.push(`   ...และอีก ${absentList.length-15} คน`);
+      }
+
+      // ไม่มีเหตุการณ์
+      if (!lateList.length && !leaveList.length && !absentList.length) {
+        lines.push(`\n🎉 ทุกคนมาตรงเวลา ไม่มีการลา ไม่มีขาดงาน`);
+      }
+
+      await sendLineMsg(lines.join('\n'));
     }
-  } catch(e) { console.warn('[LINE forgotCheck]', e.message); }
+  } catch(e) { console.warn('[LINE dailySummary]', e.message); }
 }
 
 // ── Admin settings page ──────────────────────────────────────────────
@@ -10904,18 +11102,22 @@ async function handle(req) {
         </div>`).join('')}
       </div>
 
-      <!-- เวลาแจ้งเตือนลืมเข้า/ออก -->
-      <div style="background:#f8fafc;border-radius:12px;padding:14px;margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div>
-          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:5px;">⏰ เวลาแจ้งลืมเข้างาน</label>
-          <input id="ln-ci-alert" type="time" value="${cfg.checkInAlertTime||'09:30'}"
-            style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box;">
+      <!-- เวลาส่งสรุปรายวัน -->
+      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:14px;margin-top:12px;">
+        <div style="font-size:11px;font-weight:700;color:#166534;margin-bottom:8px;">📊 เวลาส่งสรุปรายวัน (1 ครั้ง/วัน)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center;">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:5px;">🕛 เวลาส่งสรุป</label>
+            <input id="ln-ci-alert" type="time" value="${cfg.checkInAlertTime||'12:00'}"
+              style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box;">
+          </div>
+          <div style="font-size:11px;color:#64748b;line-height:1.6;padding-top:18px;">
+            ส่ง 1 ครั้ง/วัน ตามเวลาที่กำหนด<br>
+            ✅ มาทำงาน + สถานที่<br>
+            ⏰ มาสาย · 🏖️ วันลา
+          </div>
         </div>
-        <div>
-          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:5px;">🔔 เวลาแจ้งลืมออกงาน</label>
-          <input id="ln-co-alert" type="time" value="${cfg.checkOutAlertTime||'20:00'}"
-            style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box;">
-        </div>
+        <input id="ln-co-alert" type="hidden" value="${cfg.checkOutAlertTime||''}">
       </div>
     </div>
 
@@ -11043,7 +11245,17 @@ window.testLineNotify = async function(btn) {
     // วิเคราะห์ error และแนะนำวิธีแก้
     let msg = '❌ ส่งไม่สำเร็จ\n\n';
     const em = e.message || '';
-    if (em.includes('Failed to fetch') || em.includes('NetworkError') || em.includes('CORS')) {
+    if (em.includes('429') || em.includes('monthly limit') || em.includes('rate limit') || em.includes('Too Many')) {
+      msg += '⚠️ Cloudflare Worker ถึง Limit รายเดือนแล้ว\n\n';
+      msg += 'วิธีแก้:\n';
+      msg += '① สร้าง Worker ใหม่ (แนะนำ — ฟรี)\n';
+      msg += '   • เข้า cloudflare.com → Workers\n';
+      msg += '   • สร้าง Worker ใหม่ → Deploy\n';
+      msg += '   • นำ URL ใหม่มาใส่ในช่อง Proxy URL\n\n';
+      msg += '② อัปเกรด Cloudflare Workers Paid ($5/เดือน)\n';
+      msg += '   • ไม่มีจำกัด requests\n';
+      msg += '   • cloudflare.com → Workers → Plans';
+    } else if (em.includes('Failed to fetch') || em.includes('NetworkError') || em.includes('CORS')) {
       msg += '📡 เชื่อมต่อ Cloudflare Worker ไม่ได้\n\nวิธีแก้:\n• ตรวจสอบ Proxy URL ว่าถูกต้อง\n• ตรวจสอบว่า Worker ถูก Deploy แล้ว\n• ลอง เปิด URL ในเบราว์เซอร์ใหม่';
     } else if (em.includes('401') || em.includes('Authentication')) {
       msg += '🔑 Channel Access Token ผิด\n\nวิธีแก้:\n• คัดลอก Token ใหม่จาก LINE Developers Console\n• ตรวจสอบว่าไม่มีช่องว่างหน้า/หลัง';
@@ -14833,7 +15045,7 @@ window.lsApproveReq = async function(empId,reqId){
     try {
       const req = (await fbGet(`/leaveRequests/${empId}/${reqId}`))||{};
       const _dr = req.startDate===req.endDate ? req.startDate : `${req.startDate}–${req.endDate}`;
-      sendLineMsg(`✅ อนุมัติใบลาแล้ว\n👤 ${req.empName||empId} (${req.dept||'-'})\n📄 ${req.type||'-'} · ${_dr} (${req.days||1} วัน)\n✍️ อนุมัติโดย: ${CU.name||CU.id}`, 'leaveApprove');
+      // LINE: รวมในสรุปรายวัน (ไม่ส่งทันที)
     } catch(le) {}
     lsToast('อนุมัติสำเร็จ','#16a34a');
     const row=document.getElementById(`ls-req-${empId}-${reqId}`);
@@ -14854,7 +15066,7 @@ window.lsRejectReq = async function(empId,reqId){
     // ── LINE: แจ้งเตือนปฏิเสธลา ───────────────────────────────────
     try {
       const req2 = (await fbGet(`/leaveRequests/${empId}/${reqId}`))||{};
-      sendLineMsg(`❌ ไม่อนุมัติใบลา\n👤 ${req2.empName||empId} (${req2.dept||'-'})\n📄 ${req2.type||'-'} · ${req2.startDate||'-'}\n✍️ โดย: ${CU.name||CU.id}`, 'leaveApprove');
+      // LINE: รวมในสรุปรายวัน (ไม่ส่งทันที)
     } catch(le) {}
     lsToast('บันทึกการไม่อนุมัติแล้ว','#dc2626');
     const row=document.getElementById(`ls-req-${empId}-${reqId}`);
