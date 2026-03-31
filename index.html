@@ -720,13 +720,86 @@ window._activeToken = null;
 let areaCheckinMethods = {};  // { locationId: 'qr'|'face'|'both'|'gps_button' }
 let deviceBindings = {};      // { empId: { deviceId, boundAt, boundByName } }
 
-function getDeviceId() {
-  let did = localStorage.getItem('2ps_device_id');
-  if (!did) {
-    did = 'DEV_' + Date.now().toString(36).toUpperCase() + '_' + Math.random().toString(36).substr(2,8).toUpperCase();
-    localStorage.setItem('2ps_device_id', did);
+// ===== Device Fingerprint (ทำงานข้ามเบราว์เซอร์บนอุปกรณ์เดียวกัน) =====
+function _simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + c;
+    hash |= 0; // to 32-bit int
   }
-  return did;
+  return (hash >>> 0).toString(36).toUpperCase();
+}
+
+function _getCanvasFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 200; canvas.height = 50;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(50, 0, 80, 25);
+    ctx.fillStyle = '#069';
+    ctx.fillText('2PS-FP-🎨', 2, 15);
+    ctx.fillStyle = 'rgba(102,204,0,0.7)';
+    ctx.fillText('2PS-FP-🎨', 4, 17);
+    ctx.beginPath();
+    ctx.arc(100, 25, 20, 0, Math.PI * 2);
+    ctx.fillStyle = '#a33';
+    ctx.fill();
+    return canvas.toDataURL();
+  } catch(e) { return 'no-canvas'; }
+}
+
+function _getWebGLFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return 'no-webgl';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+    const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    return vendor + '~' + renderer;
+  } catch(e) { return 'no-webgl'; }
+}
+
+function _generateDeviceFingerprint() {
+  const components = [
+    screen.width + 'x' + screen.height,
+    screen.colorDepth,
+    window.devicePixelRatio || 1,
+    navigator.hardwareConcurrency || 'unknown',
+    navigator.maxTouchPoints || 0,
+    navigator.platform || 'unknown',
+    navigator.language || 'unknown',
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
+    _getWebGLFingerprint(),
+    _getCanvasFingerprint()
+  ];
+  const raw = components.join('|||');
+  // สร้าง hash หลายรอบเพื่อให้ได้ค่าที่ยาวพอ
+  const h1 = _simpleHash(raw);
+  const h2 = _simpleHash(raw + '_salt2');
+  const h3 = _simpleHash(raw + '_salt3');
+  return 'FP_' + h1 + h2 + h3;
+}
+
+let _cachedDeviceFingerprint = null;
+
+function getDeviceId() {
+  // ใช้ fingerprint ข้ามเบราว์เซอร์ (canvas + WebGL + hardware)
+  if (!_cachedDeviceFingerprint) {
+    _cachedDeviceFingerprint = _generateDeviceFingerprint();
+  }
+  // Migration: ถ้ามี device ID เก่าใน localStorage ให้เก็บไว้เพื่อ fallback
+  const oldId = localStorage.getItem('2ps_device_id');
+  if (oldId && !localStorage.getItem('2ps_device_id_legacy')) {
+    localStorage.setItem('2ps_device_id_legacy', oldId);
+  }
+  // เก็บ fingerprint ลง localStorage ด้วย (สำหรับ debug)
+  localStorage.setItem('2ps_device_id', _cachedDeviceFingerprint);
+  return _cachedDeviceFingerprint;
 }
 function checkDeviceBinding(empId) {
   const b = deviceBindings[empId];
@@ -739,7 +812,10 @@ function checkDeviceBinding(empId) {
   ];
   const conflict = allPeople.find(p => p.id !== empId && deviceBindings[p.id]?.deviceId === did);
   if (conflict) return { bound: true, match: false, conflict: true, conflictName: conflict.name, conflictRole: conflict.role };
-  return { bound: true, match: b.deviceId === did };
+  // ตรวจ match ทั้ง fingerprint ใหม่ และ legacy DEV_ ID เก่า
+  const legacyDid = localStorage.getItem('2ps_device_id_legacy');
+  const isMatch = b.deviceId === did || (b.deviceId.startsWith('DEV_') && legacyDid && b.deviceId === legacyDid);
+  return { bound: true, match: isMatch };
 }
 // =====================================================================
 //  ตรวจสอบการมาสาย — คืน { late:bool, minutesLate:number, workStart:string }
@@ -888,14 +964,19 @@ async function doLogin() {
         if (devData && typeof devData === 'object') deviceBindings = devData;
 
         const did = getDeviceId();
+        const legacyDid = localStorage.getItem('2ps_device_id_legacy'); // device ID เก่า (ก่อน migration)
         const b = deviceBindings[CU.id];
 
-        // ตรวจว่า device นี้ถูกผูกกับบัญชีอื่นไหม
+        // ตรวจว่า device นี้ถูกผูกกับบัญชีอื่นไหม (ตรวจทั้ง fingerprint ใหม่ และ legacy ID เก่า)
         const allPeople = [
           ...db.employees.map(e => ({ id: e._key, name: e.name, role: 'พนักงาน' })),
           ...db.supervisors.map(s => ({ id: s._key, name: s.name, role: 'หัวหน้างาน' }))
         ];
         const conflictOther = allPeople.find(p => p.id !== CU.id && deviceBindings[p.id]?.deviceId === did);
+
+        // Migration: ถ้า binding เก่าเป็น DEV_ format แต่ legacy ID ตรง → auto-migrate เป็น fingerprint ใหม่
+        const needsMigration = b && b.deviceId && b.deviceId !== did
+          && b.deviceId.startsWith('DEV_') && legacyDid && b.deviceId === legacyDid;
 
         if (conflictOther) {
           // อุปกรณ์นี้ผูกกับคนอื่นอยู่แล้ว → ห้าม login
@@ -903,6 +984,12 @@ async function doLogin() {
           deviceBlocked = true;
           err.textContent = `🚫 อุปกรณ์นี้ถูกผูกกับบัญชี "${conflictOther.name}" (${conflictOther.role}) แล้ว ไม่สามารถเข้าสู่ระบบได้`;
           err.classList.remove('hidden');
+        } else if (needsMigration) {
+          // Auto-migrate จาก DEV_ เก่าเป็น fingerprint ใหม่
+          const payload = { deviceId: did, boundAt: new Date().toISOString(), empName: CU.displayName, migratedFrom: b.deviceId };
+          await fbSet('/deviceBindings/' + CU.id, payload).catch(() => {});
+          deviceBindings[CU.id] = payload;
+          deviceFirstBind = true; // แจ้งเตือนเหมือนผูกครั้งแรก
         } else if (b && b.deviceId && b.deviceId !== did) {
           // บัญชีนี้ผูก device อื่นไว้ → ห้าม login
           CU = null;
@@ -6212,6 +6299,22 @@ function _pgCheckinFull(mc){
 //  CAMERA
 // =====================================================================
 window.openCam=function(){
+  // ตรวจสอบว่าพนักงานลงทะเบียนใบหน้าแล้วหรือยัง
+  if (CU.role === 'employee') {
+    const emp = db.employees.find(e => e._key === CU.id);
+    const hasFace = emp && Array.isArray(emp.faceDescriptor) && emp.faceDescriptor.length === 128;
+    if (!hasFace) {
+      window._faceRegReturnToCheckin = true;
+      lsToast('⚠️ กรุณาลงทะเบียนใบหน้าก่อนลงชื่อเข้างาน', '#f59e0b');
+      const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+      const btn = isMob
+        ? document.querySelector('[data-mob-tab=emp-face-reg]')
+        : document.querySelector('[data-tab=emp-face-reg]');
+      if (btn) goTab('emp-face-reg', btn);
+      else renderPage('emp-face-reg');
+      return;
+    }
+  }
   window._camMode='IN';
   document.getElementById('cam-modal').classList.add('active');
   document.getElementById('cam-msg').classList.add('hidden');
@@ -7679,19 +7782,15 @@ async function renderEmpHome(){
           <span class="emp-menu-label">ประวัติการลา</span>
         </button>
         <!-- วันหยุดประจำปี -->
-        <button onclick="${goCheckin}" class="emp-menu-btn">
+        <button onclick="pgEmpHolidays()" class="emp-menu-btn">
           <div class="emp-menu-icon" style="background:#fef2f2;"><i class="fas fa-calendar-times" style="color:#dc2626;"></i></div>
           <span class="emp-menu-label">วันหยุดประจำปี</span>
         </button>
-        <!-- เบิกค่าใช้จ่าย -->
-        <button onclick="${goCheckin}" class="emp-menu-btn">
-          <div class="emp-menu-icon" style="background:#f5f3ff;"><i class="fas fa-wallet" style="color:#7c3aed;"></i></div>
-          <span class="emp-menu-label">เบิกค่าใช้จ่าย</span>
-        </button>
         <!-- ประกาศ -->
-        <button onclick="${goCheckin}" class="emp-menu-btn">
+        <button onclick="pgEmpAnnouncements()" class="emp-menu-btn" id="emp-menu-announce-btn" style="position:relative;">
           <div class="emp-menu-icon" style="background:#ecfdf5;"><i class="fas fa-bullhorn" style="color:#059669;"></i></div>
           <span class="emp-menu-label">ประกาศ</span>
+          <span id="emp-announce-badge" style="display:none;position:absolute;top:4px;right:4px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:50%;width:16px;height:16px;align-items:center;justify-content:center;"></span>
         </button>
         <!-- สลิปเงินเดือน -->
         <button onclick="pgEmpPayslip()" class="emp-menu-btn">
@@ -7721,6 +7820,7 @@ async function renderEmpHome(){
     cl.textContent=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
     if(se) se.textContent=String(now.getSeconds()).padStart(2,'0')+' วินาที';
   },1000);
+  _loadAnnounceBadge();
 }
 
 window.showEmpTodayDetail = async function() {
@@ -8297,6 +8397,149 @@ window.empDownloadSlipDirect = async function(ymKey) {
 // myHist replaced below
 
 // =====================================================================
+//  EMPLOYEE HOLIDAY PAGE
+// =====================================================================
+window.pgEmpHolidays = async function() {
+  const mc = document.getElementById('main-content');
+  mc.style.background = '#f1f5f9';
+  mc.innerHTML = `<div style="display:flex;justify-content:center;padding:60px;"><div class="loading-spinner" style="width:28px;height:28px;border-width:3px;"></div></div>`;
+
+  const holRaw = await fbGet('/settings/holidays').catch(() => null);
+  const weeklySet = new Set((holRaw?.weekly || []).map(Number));
+  const specials = Object.values(holRaw?.special || {}).filter(h => h?.date).sort((a,b) => a.date.localeCompare(b.date));
+
+  const DAY_NAMES = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+  const weeklyDays = [0,1,2,3,4,5,6].filter(d => weeklySet.has(d)).map(d => DAY_NAMES[d]);
+
+  const curYear = new Date().getFullYear();
+  const yearSpecials = specials.filter(h => h.date.startsWith(String(curYear)) || h.date.startsWith(String(curYear+1)));
+
+  mc.innerHTML = `
+  <div style="min-height:100vh;background:#f1f5f9;padding-bottom:40px;">
+    <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:16px 18px 22px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="pgEmpHome()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:36px;height:36px;border-radius:10px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#fff;">วันหยุดประจำปี</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:1px;">Public Holidays</div>
+        </div>
+      </div>
+    </div>
+    <div style="max-width:480px;margin:0 auto;padding:18px 14px 0;">
+
+      <!-- วันหยุดประจำสัปดาห์ -->
+      <div style="background:#fff;border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.07);">
+        <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:12px;"><i class="fas fa-calendar-week" style="margin-right:6px;"></i>วันหยุดประจำสัปดาห์</div>
+        ${weeklyDays.length ? weeklyDays.map(d => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+            <div style="width:36px;height:36px;background:#fee2e2;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <i class="fas fa-calendar-times" style="color:#dc2626;font-size:15px;"></i>
+            </div>
+            <div style="font-size:14px;font-weight:600;color:#1e293b;">วัน${d}</div>
+            <span style="margin-left:auto;background:#fee2e2;color:#dc2626;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">หยุด</span>
+          </div>`).join('')
+        : `<div style="color:#94a3b8;font-size:13px;text-align:center;padding:12px 0;">ยังไม่ได้กำหนดวันหยุดประจำสัปดาห์</div>`}
+      </div>
+
+      <!-- วันหยุดพิเศษ -->
+      <div style="font-size:13px;font-weight:700;color:#475569;margin-bottom:10px;padding-left:2px;">
+        <i class="fas fa-star" style="margin-right:6px;color:#f59e0b;"></i>วันหยุดพิเศษ / วันหยุดประจำปี (${yearSpecials.length} วัน)
+      </div>
+      ${yearSpecials.length ? yearSpecials.map(h => {
+        const d = new Date(h.date + 'T00:00:00');
+        const thDate = d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+        return `
+        <div style="background:#fff;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 6px rgba(0,0,0,.06);display:flex;align-items:center;gap:12px;">
+          <div style="width:46px;height:46px;background:linear-gradient(135deg,#fee2e2,#fecaca);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;">
+            <div style="font-size:16px;font-weight:900;color:#dc2626;line-height:1;">${d.getDate()}</div>
+            <div style="font-size:9px;color:#b91c1c;font-weight:600;">${d.toLocaleDateString('th-TH',{month:'short'})}</div>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;color:#1e293b;">${h.name||'วันหยุดพิเศษ'}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${thDate}</div>
+          </div>
+        </div>`;
+      }).join('')
+      : `<div style="background:#fff;border-radius:14px;padding:32px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.06);">
+           <div style="font-size:36px;margin-bottom:10px;">📅</div>
+           <div style="font-size:14px;font-weight:600;color:#374151;">ยังไม่มีวันหยุดพิเศษที่กำหนด</div>
+         </div>`}
+    </div>
+  </div>`;
+};
+
+// =====================================================================
+//  EMPLOYEE ANNOUNCEMENTS PAGE
+// =====================================================================
+window.pgEmpAnnouncements = async function() {
+  const mc = document.getElementById('main-content');
+  mc.style.background = '#f1f5f9';
+  mc.innerHTML = `<div style="display:flex;justify-content:center;padding:60px;"><div class="loading-spinner" style="width:28px;height:28px;border-width:3px;"></div></div>`;
+
+  const raw = await fbGet('/announcements').catch(() => null);
+  const items = raw && typeof raw === 'object'
+    ? Object.entries(raw).filter(([,v])=>v).map(([k,v])=>({_key:k,...v})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
+    : [];
+
+  // Mark all as seen
+  try { localStorage.setItem('announce_seen', items[0]?._key || ''); } catch(_) {}
+  const badge = document.getElementById('emp-announce-badge');
+  if (badge) badge.style.display = 'none';
+
+  mc.innerHTML = `
+  <div style="min-height:100vh;background:#f1f5f9;padding-bottom:40px;">
+    <div style="background:linear-gradient(135deg,#059669,#047857);padding:16px 18px 22px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="pgEmpHome()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:36px;height:36px;border-radius:10px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#fff;">ประกาศ</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:1px;">Announcements</div>
+        </div>
+      </div>
+    </div>
+    <div style="max-width:480px;margin:0 auto;padding:18px 14px 0;">
+      ${items.length === 0
+        ? `<div style="background:#fff;border-radius:20px;padding:48px 20px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+             <div style="font-size:52px;margin-bottom:16px;">📢</div>
+             <div style="font-size:16px;font-weight:700;color:#374151;margin-bottom:6px;">ยังไม่มีประกาศ</div>
+             <div style="font-size:13px;color:#9ca3af;">ยังไม่มีประกาศจากแอดมิน</div>
+           </div>`
+        : items.map(item => {
+            const dt = item.createdAt ? new Date(item.createdAt).toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+            return `
+            <div style="background:#fff;border-radius:16px;padding:16px 18px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07);border-left:4px solid #059669;">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;">
+                <div style="font-size:15px;font-weight:700;color:#1e293b;">${item.title||'ประกาศ'}</div>
+                <div style="font-size:10px;color:#94a3b8;white-space:nowrap;margin-top:2px;">${dt}</div>
+              </div>
+              <div style="font-size:13px;color:#475569;line-height:1.6;white-space:pre-wrap;">${item.content||''}</div>
+              ${item.createdBy?`<div style="font-size:11px;color:#94a3b8;margin-top:8px;">โดย: ${item.createdBy}</div>`:''}
+            </div>`;
+          }).join('')}
+    </div>
+  </div>`;
+};
+
+// Load announcement badge (called from pgEmpHome)
+async function _loadAnnounceBadge() {
+  try {
+    const raw = await fbGet('/announcements').catch(() => null);
+    if (!raw || typeof raw !== 'object') return;
+    const items = Object.entries(raw).filter(([,v])=>v).map(([k,v])=>({_key:k,...v})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    if (!items.length) return;
+    const seen = localStorage.getItem('announce_seen') || '';
+    if (seen !== items[0]._key) {
+      const badge = document.getElementById('emp-announce-badge');
+      if (badge) { badge.textContent = '!'; badge.style.display = 'flex'; }
+    }
+  } catch(_) {}
+}
+
+// =====================================================================
 //  CHANGE PASSWORD
 // =====================================================================
 function pgChgPwd(){
@@ -8671,6 +8914,23 @@ window.openFaceRegister = async function(empKey) {
 
 // Open face modal — CHECK-IN mode (employee)
 window.openFaceScan = async function() {
+  // ตรวจสอบว่าพนักงานลงทะเบียนใบหน้าแล้วหรือยัง
+  if (CU.role === 'employee') {
+    const emp = db.employees.find(e => e._key === CU.id);
+    const hasFace = emp && Array.isArray(emp.faceDescriptor) && emp.faceDescriptor.length === 128;
+    if (!hasFace) {
+      // ยังไม่ลงทะเบียน → ไปหน้าลงทะเบียนใบหน้าอัตโนมัติ
+      window._faceRegReturnToCheckin = true;
+      lsToast('⚠️ กรุณาลงทะเบียนใบหน้าก่อนสแกนเข้างาน', '#f59e0b');
+      const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+      const btn = isMob
+        ? document.querySelector('[data-mob-tab=emp-face-reg]')
+        : document.querySelector('[data-tab=emp-face-reg]');
+      if (btn) goTab('emp-face-reg', btn);
+      else renderPage('emp-face-reg');
+      return;
+    }
+  }
   faceModalMode = 'checkin';
   document.getElementById('face-modal-title').textContent = '🟢 สแกนใบหน้าเข้างาน';
   document.getElementById('face-modal-sub').textContent = 'จ่อหน้าตรงกล้อง ห่าง 30-50 ซม.';
@@ -10693,6 +10953,22 @@ async function _checkDeviceBindingUI(empObj) {
 }
 
 window.doGpsButtonCheckin = async function() {
+  // ตรวจสอบว่าพนักงานลงทะเบียนใบหน้าแล้วหรือยัง
+  if (CU.role === 'employee') {
+    const emp = db.employees.find(e => e._key === CU.id);
+    const hasFace = emp && Array.isArray(emp.faceDescriptor) && emp.faceDescriptor.length === 128;
+    if (!hasFace) {
+      window._faceRegReturnToCheckin = true;
+      lsToast('⚠️ กรุณาลงทะเบียนใบหน้าก่อนลงเวลาเข้างาน', '#f59e0b');
+      const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+      const btn2 = isMob
+        ? document.querySelector('[data-mob-tab=emp-face-reg]')
+        : document.querySelector('[data-tab=emp-face-reg]');
+      if (btn2) goTab('emp-face-reg', btn2);
+      else renderPage('emp-face-reg');
+      return;
+    }
+  }
   const btn = document.getElementById('btn-gps-checkin');
   const statusEl = document.getElementById('ci-status');
   const empObj = getCurrentUserAsEmpObj();
@@ -11999,7 +12275,7 @@ async function renderEmpCal() {
   let cells = '';
   // Headers
   dayNames.forEach((d, i) => {
-    const hCol = weeklyHolSet.has(i) ? '#7c3aed' : '#64748b';
+    const hCol = weeklyHolSet.has(i) ? '#dc2626' : '#64748b';
     cells += `<div style="text-align:center;font-size:12px;font-weight:700;color:${hCol};padding:8px 0 4px;">${d}</div>`;
   });
   // Empty prefix
@@ -12040,7 +12316,7 @@ async function renderEmpCal() {
     const styles = {
       work:    {bg:'#d1fae5', border:'#6ee7b7', dayCol:'#064e3b', textCol:'#065f46'},
       leave:   {bg:'#fce7f3', border:'#f9a8d4', dayCol:'#831843', textCol:'#9d174d'},
-      weekend: {bg:'#ede9fe', border:'#c4b5fd', dayCol:'#5b21b6', textCol:'#6d28d9'},
+      weekend: {bg:'#fee2e2', border:'#fca5a5', dayCol:'#b91c1c', textCol:'#dc2626'},
       empty:   {bg:'#f8fafc', border:'#e2e8f0', dayCol:'#94a3b8', textCol:'#94a3b8'},
       today:   {bg:'#d1fae5', border:'#34d399', dayCol:'#064e3b', textCol:'#065f46'},
     };
@@ -12146,7 +12422,7 @@ async function renderEmpCal() {
     <div style="display:flex;flex-wrap:wrap;gap:10px 16px;padding:10px 16px 16px;border-top:1px solid #f1f5f9;">
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#d1fae5;border:1.5px solid #6ee7b7;border-radius:3px;"></div>มาทำงาน</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fce7f3;border:1.5px solid #f9a8d4;border-radius:3px;"></div>ขาด/ลา/โทษ</div>
-      <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#ede9fe;border:1.5px solid #c4b5fd;border-radius:3px;"></div>วันหยุด</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fee2e2;border:1.5px solid #fca5a5;border-radius:3px;"></div>วันหยุด</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:6px;height:6px;background:#f97316;border-radius:50%;"></div>สาย</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="background:#3b82f6;color:#fff;font-size:8px;font-weight:700;border-radius:3px;padding:0 3px;line-height:14px;">OT</div>มีโอที</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="background:#ef4444;color:#fff;font-size:8px;font-weight:800;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;">-1</div>หักคะแนน</div>
@@ -12190,7 +12466,7 @@ window.showCalDayDetail = function(dataStr) {
   // Determine header color + title
   let headerBg = '#16a34a', title = 'มาทำงาน';
   if(d.type==='leave')   { headerBg='#7c3aed'; title=d.leaveType||'วันลา'; }
-  if(d.type==='weekend') { headerBg='#6366f1'; title=d.holidayName||'วันหยุด'; }
+  if(d.type==='weekend') { headerBg='#dc2626'; title=d.holidayName||'วันหยุด'; }
   if(d.type==='empty')   { headerBg='#94a3b8'; title='ไม่มีข้อมูล'; }
   if(d.type==='today')   { headerBg='#16a34a'; title='มาทำงาน'; }
 
@@ -14354,6 +14630,10 @@ function pgLeaveSettings(){
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-camera mr-2"></i>รูปสแกน
       </button>
+      <button onclick="lsShowTab('announce')" id="ls-tab-announce"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-bullhorn mr-2"></i>ประกาศพนักงาน
+      </button>
     </div>
 
     <!-- Tab: ประเภทการลา -->
@@ -14591,6 +14871,39 @@ function pgLeaveSettings(){
         </div>
         <div id="ls-photos-list" style="padding:16px;min-height:100px;">
           <div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;">เปิดแท็บนี้เพื่อโหลดรูป</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: ประกาศพนักงาน -->
+    <div id="ls-pane-announce" style="display:none;">
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:16px;">
+        <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;"><i class="fas fa-plus-circle" style="color:#059669;margin-right:8px;"></i>เพิ่มประกาศใหม่</span>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">หัวข้อประกาศ</label>
+            <input id="ann-title" type="text" placeholder="หัวข้อประกาศ..." style="width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;"
+              onfocus="this.style.borderColor='#059669'" onblur="this.style.borderColor='#e2e8f0'">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">เนื้อหาประกาศ</label>
+            <textarea id="ann-content" rows="4" placeholder="พิมพ์เนื้อหาประกาศที่ต้องการแจ้งพนักงาน..." style="width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;resize:vertical;"
+              onfocus="this.style.borderColor='#059669'" onblur="this.style.borderColor='#e2e8f0'"></textarea>
+          </div>
+          <button onclick="lsPostAnnouncement()" style="padding:10px 24px;background:linear-gradient(135deg,#059669,#047857);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;align-self:flex-start;">
+            <i class="fas fa-bullhorn mr-2"></i>ประกาศ / แจ้งเตือนพนักงาน
+          </button>
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;">
+        <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;"><i class="fas fa-list" style="color:#059669;margin-right:8px;"></i>ประกาศทั้งหมด</span>
+          <button onclick="lsLoadAnnouncements()" style="font-size:11px;color:#3b82f6;background:none;border:none;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;"><i class="fas fa-sync mr-1"></i>รีเฟรช</button>
+        </div>
+        <div id="ls-announce-list" style="padding:16px;min-height:80px;">
+          <div style="text-align:center;padding:24px;color:#94a3b8;font-size:13px;">เปิดแท็บเพื่อโหลดประกาศ</div>
         </div>
       </div>
     </div>
