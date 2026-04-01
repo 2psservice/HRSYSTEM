@@ -1834,10 +1834,10 @@
 
     // หา workStart/workEnd จาก location → deptSettings → wage global (ลำดับความสำคัญ)
     function getWorkTimes(emp, locationId) {
-      // 1) จากพื้นที่ที่เช็คชื่อ
+      // 1) จากพื้นที่ที่เช็คชื่อ — ถ้าเจอสถานที่ ใช้เวลาของสถานที่นั้นเสมอ
       if (locationId) {
         const loc = gpsLocations.find(l => l.id === locationId);
-        if (loc?.workStart) return { workStart: loc.workStart, workEnd: loc.workEnd || '17:00' };
+        if (loc) return { workStart: loc.workStart || '08:00', workEnd: loc.workEnd || '17:00' };
       }
       // 2) จาก deptSettings
       const ds = db.wage.deptSettings || {};
@@ -5613,9 +5613,10 @@
       const tTotal = recs.reduce((s, r) => s + r.total, 0);
       const tOTH = recs.reduce((s, r) => s + (r.otHours || 0), 0);
 
-      // supervisor & dept options สำหรับ filter
+      // supervisor, dept, location options สำหรับ filter
       const supOpts = ['', ...new Set(recs.map(r => r.sup).filter(Boolean))];
       const deptOpts = ['', ...new Set(recs.map(r => r.dept).filter(Boolean))];
+      const locOpts = ['', ...new Set(recs.map(r => r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '')).filter(Boolean))];
 
       el.innerHTML = `
     <!-- Filter bar -->
@@ -5649,6 +5650,14 @@
         <select id="alog-dept" onchange="_alogFilter()"
           style="border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;font-family:Sarabun,sans-serif;color:#1e293b;outline:none;background:#fff;">
           ${deptOpts.map(d => `<option value="${d}">${d || 'ทั้งหมด'}</option>`).join('')}
+        </select>
+      </div>
+      <!-- Location filter -->
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">สถานที่</div>
+        <select id="alog-loc" onchange="_alogFilter()"
+          style="border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;font-family:Sarabun,sans-serif;color:#1e293b;outline:none;background:#fff;">
+          ${locOpts.map(l => `<option value="${l}">${l || 'ทั้งหมด'}</option>`).join('')}
         </select>
       </div>
       <!-- Status filter -->
@@ -5706,7 +5715,7 @@
         <table class="min-w-full text-sm" id="alog-table">
           <thead style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
             <tr>
-              ${['#', 'ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'เข้างาน', 'ออกงาน', 'สถานะ', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', '<span style="color:#dc2626">เบิกล่วงหน้า</span>', 'คงเหลือ', 'GPS', 'วิธี']
+              ${['#', 'ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'สถานที่เข้างาน', 'เข้างาน', 'ออกงาน', 'สถานะ', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', '<span style="color:#dc2626">เบิกล่วงหน้า</span>', 'คงเหลือ', 'GPS', 'วิธี', ...(CU.role === 'admin' ? ['จัดการ'] : [])]
           .map(h => `<th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">${h}</th>`).join('')}
             </tr>
           </thead>
@@ -5718,13 +5727,13 @@
               ${(() => {
           const tAdv = recs.reduce((s, r) => s + sumAdvances(r.empId), 0);
           const tNet = tTotal - tAdv;
-          return `<td colspan="8" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${total} รายการ</td>
+          return `<td colspan="9" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${total} รายการ</td>
                 <td style="padding:10px 14px;font-weight:800;color:#16a34a;font-size:13px;">฿${tWage.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;color:#7c3aed;font-size:13px;">฿${tOT.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;color:#1d4ed8;font-size:13px;">฿${tTotal.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;color:#dc2626;font-size:13px;">฿${tAdv.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;font-size:13px;color:${tNet < 0 ? '#dc2626' : '#16a34a'};">฿${tNet.toLocaleString()}</td>
-                <td colspan="2"></td>`;
+                <td colspan="${CU.role === 'admin' ? 3 : 2}"></td>`;
         })()}
             </tr>
           </tfoot>
@@ -5739,11 +5748,14 @@
     }
 
     function _buildAlogRows(recs) {
-      if (!recs.length) return `<tr><td colspan="15" style="padding:32px;text-align:center;color:#94a3b8;font-size:14px;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i>ไม่มีข้อมูลการเข้างาน</td></tr>`;
+      const colCount = CU.role === 'admin' ? 17 : 16;
+      if (!recs.length) return `<tr><td colspan="${colCount}" style="padding:32px;text-align:center;color:#94a3b8;font-size:14px;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i>ไม่มีข้อมูลการเข้างาน</td></tr>`;
+      const dk = window._alogDk || todayStr;
       return recs.map((r, i) => {
         const methodIcon = r.checkInMethod === 'face' ? '😊' : r.checkInMethod === 'scanner' ? '🖐' : r.checkInMethod === 'gps_button' ? '📍' : '📱';
         const advAmt = sumAdvances(r.empId);
         const net = r.total - advAmt;
+        const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '-');
         return `<tr style="border-bottom:1px solid #f1f5f9;transition:background .1s;${r._late ? 'background:#fff7f7;' : ''}"
       onmouseover="this.style.background='${r._late ? '#fef2f2' : '#f8fafc'}'"
       onmouseout="this.style.background='${r._late ? '#fff7f7' : ''}'">
@@ -5751,6 +5763,9 @@
       <td style="padding:10px 14px;font-weight:700;color:#1e293b;white-space:nowrap;">${r.empName}</td>
       <td style="padding:10px 14px;color:#64748b;font-size:12px;">${r.dept || '-'}</td>
       <td style="padding:10px 14px;color:#64748b;font-size:12px;">${r.sup || '-'}</td>
+      <td style="padding:10px 14px;font-size:12px;color:#0891b2;white-space:nowrap;">
+        <i class="fas fa-map-marker-alt" style="margin-right:3px;color:#06b6d4;font-size:10px;"></i>${locName}
+      </td>
       <td style="padding:10px 14px;font-family:monospace;font-weight:700;color:${r._late ? '#dc2626' : '#16a34a'};white-space:nowrap;">${r.checkInTime}</td>
       <td style="padding:10px 14px;font-family:monospace;color:#64748b;white-space:nowrap;">${r.checkOutTime || '<span style="color:#94a3b8;font-size:11px;">-</span>'}</td>
       <td style="padding:10px 14px;white-space:nowrap;">
@@ -5770,6 +5785,12 @@
             : '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">✗</span>'}
       </td>
       <td style="padding:10px 14px;text-align:center;font-size:16px;" title="${r.checkInMethod || 'qr'}">${methodIcon}</td>
+      ${CU.role === 'admin' ? `<td style="padding:10px 14px;text-align:center;white-space:nowrap;">
+        <button onclick="adminEditAttendance('${dk}',${JSON.stringify(r).replace(/"/g, '&quot;')})"
+          style="background:#eff6ff;color:#2563eb;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+          <i class="fas fa-edit" style="margin-right:3px;"></i>แก้ไข
+        </button>
+      </td>` : ''}
     </tr>`;
       }).join('');
     }
@@ -5796,11 +5817,16 @@
       const q = (document.getElementById('alog-search')?.value || '').toLowerCase();
       const sup = document.getElementById('alog-sup')?.value || '';
       const dept = document.getElementById('alog-dept')?.value || '';
+      const loc = document.getElementById('alog-loc')?.value || '';
       const status = document.getElementById('alog-status')?.value || '';
       let recs = (window._alogAllRecs || []).filter(r => {
         if (q && !r.empName.toLowerCase().includes(q)) return false;
         if (sup && r.sup !== sup) return false;
         if (dept && r.dept !== dept) return false;
+        if (loc) {
+          const rLoc = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '');
+          if (rLoc !== loc) return false;
+        }
         if (status === 'ontime' && r._late) return false;
         if (status === 'late' && !r._late) return false;
         if (status === 'out' && !r.checkOutTime) return false;
@@ -5817,13 +5843,13 @@
         const tAdv = recs.reduce((s, r) => s + sumAdvances(r.empId), 0);
         const tNet = tT - tAdv;
         tfoot.innerHTML = `
-      <td colspan="8" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${recs.length} รายการ</td>
+      <td colspan="9" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${recs.length} รายการ</td>
       <td style="padding:10px 14px;font-weight:800;color:#16a34a;font-size:13px;">฿${tW.toLocaleString()}</td>
       <td style="padding:10px 14px;font-weight:800;color:#7c3aed;font-size:13px;">฿${tO.toLocaleString()}</td>
       <td style="padding:10px 14px;font-weight:800;color:#1d4ed8;font-size:13px;">฿${tT.toLocaleString()}</td>
       <td style="padding:10px 14px;font-weight:800;color:#dc2626;font-size:13px;">฿${tAdv.toLocaleString()}</td>
       <td style="padding:10px 14px;font-weight:800;font-size:13px;color:${tNet < 0 ? '#dc2626' : '#16a34a'};">฿${tNet.toLocaleString()}</td>
-      <td colspan="2"></td>`;
+      <td colspan="${CU.role === 'admin' ? 3 : 2}"></td>`;
       }
       _renderAlogLateBanner(recs.filter(r => r._late));
     };
@@ -5832,11 +5858,12 @@
       const recs = window._alogAllRecs || [];
       const ws_data = [
         ['บันทึกการเข้างาน — ' + dk],
-        ['ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'เวลาเข้า', 'เวลาออก', 'สถานะ', 'สาย (นาที)', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', 'เบิกล่วงหน้า', 'คงเหลือ', 'GPS', 'วิธี'],
+        ['ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'สถานที่เข้างาน', 'เวลาเข้า', 'เวลาออก', 'สถานะ', 'สาย (นาที)', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', 'เบิกล่วงหน้า', 'คงเหลือ', 'GPS', 'วิธี'],
         ...recs.map(r => {
           const adv = sumAdvances(r.empId);
+          const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '-');
           return [
-            r.empName, r.dept || '-', r.sup || '-',
+            r.empName, r.dept || '-', r.sup || '-', locName,
             r.checkInTime, r.checkOutTime || '-',
             r._late ? `สาย ${r._minutesLate} นาที` : 'ตรงเวลา',
             r._late ? r._minutesLate : 0,
@@ -11578,7 +11605,9 @@
       }
       hideSync();
       closeModal();
-      renderDashBody(dateKey);
+      // re-render ทั้ง dashboard และ attendance log
+      if (typeof renderDashBody === 'function') renderDashBody(dateKey);
+      if (document.getElementById('alog-body')) _renderAttendanceLog(dateKey);
       alert(`✅ บันทึกสำเร็จ\nเวลาเข้า: ${inT} · เวลาออก: ${outT || '—'} · รวม: ฿${total.toLocaleString()}`);
     };
 
@@ -11592,7 +11621,8 @@
       }
       hideSync();
       closeModal();
-      renderDashBody(dateKey);
+      if (typeof renderDashBody === 'function') renderDashBody(dateKey);
+      if (document.getElementById('alog-body')) _renderAttendanceLog(dateKey);
     };
 
     window.adminDeleteAttendance = async function (dateKey, fbKey, name) {
@@ -11602,7 +11632,8 @@
       if (db.attendance[dateKey]) delete db.attendance[dateKey][fbKey];
       hideSync();
       closeModal();
-      renderDashBody(dateKey);
+      if (typeof renderDashBody === 'function') renderDashBody(dateKey);
+      if (document.getElementById('alog-body')) _renderAttendanceLog(dateKey);
     };
 
     // Admin เช็คชื่อให้พนักงานจากหน้า Dashboard (กรณีลืมสแกน)
