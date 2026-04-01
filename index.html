@@ -1564,6 +1564,10 @@
         if (wage) db.wage = { ...db.wage, ...wage };
         if (admin) db.admin = { ...db.admin, ...admin };
 
+        // โหลดค่า Device Binding toggle
+        const dbToggle = await fbGet('/settings/deviceBindingEnabled').catch(() => null);
+        deviceBindingEnabled = dbToggle !== false; // default = เปิด
+
         // โหลด advances
         const advRaw = await fbGet('/advances').catch(() => null);
         if (advRaw && typeof advRaw === 'object') {
@@ -1709,6 +1713,7 @@
     // ===== DEVICE BINDING & AREA METHOD GLOBALS =====
     let areaCheckinMethods = {};  // { locationId: 'qr'|'face'|'both'|'gps_button' }
     let deviceBindings = {};      // { empId: { deviceId, boundAt, boundByName } }
+    let deviceBindingEnabled = true; // toggle เปิด/ปิด Device Binding (โหลดจาก Firebase)
 
     // =====================================================================
     //  DEVICE FINGERPRINT — ข้ามเบราว์เซอร์บนอุปกรณ์เดียวกัน
@@ -1803,6 +1808,7 @@
       return _cachedDeviceFingerprint;
     }
     function checkDeviceBinding(empId) {
+      if (!deviceBindingEnabled) return { bound: false, match: true }; // ปิด → ผ่านทันที
       const b = deviceBindings[empId];
       const did = getDeviceId();
       if (!b || !b.deviceId) return { bound: false, match: false };
@@ -2030,9 +2036,12 @@
           err.className = 'text-sm text-red-600 bg-red-50 rounded-lg p-3 text-center';
         } else {
           // ===== Device Binding ตรวจสอบ/ผูกอุปกรณ์ตั้งแต่ login =====
+          // โหลดค่า toggle ล่าสุด
+          const _dbToggle = await fbGet('/settings/deviceBindingEnabled').catch(() => null);
+          deviceBindingEnabled = _dbToggle !== false;
           let deviceBlocked = false;
           let deviceFirstBind = false;
-          if (CU.role === 'employee' || CU.role === 'supervisor') {
+          if (deviceBindingEnabled && (CU.role === 'employee' || CU.role === 'supervisor')) {
             // ดึง deviceBindings ล่าสุดจาก Firebase
             const devData = await fbGet('/deviceBindings').catch(() => null);
             if (devData && typeof devData === 'object') deviceBindings = devData;
@@ -11924,6 +11933,9 @@
     // - ถ้าผูกแล้วตรง → ok:true
     // - ถ้าผูกแล้วไม่ตรง → ok:false
     async function _enforceDeviceBinding(empId, empName) {
+      // ถ้าปิด Device Binding → ผ่านทันที
+      if (!deviceBindingEnabled) return { ok: true, msg: '✅ Device Binding ปิดอยู่' };
+
       const did = getDeviceId();
       const oldFp = localStorage.getItem('2ps_old_fingerprint');
       const b = deviceBindings[empId];
@@ -13142,14 +13154,30 @@ async function handle(req) {
 
       el.innerHTML = `
     <div style="width:100%;">
-      <!-- Info banner -->
-      <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);border-radius:16px;padding:18px 22px;margin-bottom:20px;color:#f1f5f9;display:flex;align-items:flex-start;gap:14px;">
-        <i class="fas fa-shield-alt" style="font-size:26px;color:#f59e0b;flex-shrink:0;margin-top:2px;"></i>
-        <div>
-          <div style="font-size:15px;font-weight:700;margin-bottom:5px;">Device Binding — ป้องกันการฝากเพื่อนเช็คชื่อ</div>
-          <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
-            ระบบผูก Device ID อัตโนมัติเมื่อเช็คชื่อครั้งแรก ครอบคลุมทั้ง <b style="color:#fbbf24;">พนักงาน</b> และ <b style="color:#a78bfa;">หัวหน้างาน</b>
-            — Admin รีเซ็ตได้ที่หน้านี้
+      <!-- Info banner + Toggle -->
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);border-radius:16px;padding:18px 22px;margin-bottom:20px;color:#f1f5f9;">
+        <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">
+          <i class="fas fa-shield-alt" style="font-size:26px;color:#f59e0b;flex-shrink:0;margin-top:2px;"></i>
+          <div style="flex:1;">
+            <div style="font-size:15px;font-weight:700;margin-bottom:5px;">Device Binding — ป้องกันการฝากเพื่อนเช็คชื่อ</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+              ระบบผูก Device ID อัตโนมัติเมื่อเช็คชื่อครั้งแรก ครอบคลุมทั้ง <b style="color:#fbbf24;">พนักงาน</b> และ <b style="color:#a78bfa;">หัวหน้างาน</b>
+              — Admin รีเซ็ตได้ที่หน้านี้
+            </div>
+          </div>
+        </div>
+        <!-- Toggle เปิด/ปิด -->
+        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.08);border-radius:12px;padding:12px 16px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#f1f5f9;">สถานะ Device Binding</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">ปิดเพื่อให้ทุกคนเข้าใช้งานได้โดยไม่ต้องผูกอุปกรณ์</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="db-toggle-label" style="font-size:12px;font-weight:700;color:${deviceBindingEnabled ? '#4ade80' : '#f87171'};">${deviceBindingEnabled ? 'เปิดใช้งาน' : 'ปิดอยู่'}</span>
+            <div id="db-toggle-wrap" onclick="toggleDeviceBinding()" data-on="${deviceBindingEnabled ? '1' : '0'}"
+              style="width:48px;height:26px;border-radius:13px;background:${deviceBindingEnabled ? '#22c55e' : '#64748b'};position:relative;cursor:pointer;transition:background .2s;">
+              <div id="db-toggle-knob" style="width:22px;height:22px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${deviceBindingEnabled ? '24px' : '2px'};transition:left .2s;box-shadow:0 1px 4px rgba(0,0,0,.2);"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -13271,6 +13299,32 @@ async function handle(req) {
         if (mode === 'sup') show = isSup;
         r.style.display = show ? '' : 'none';
       });
+    };
+
+    // Toggle เปิด/ปิด Device Binding
+    window.toggleDeviceBinding = async function () {
+      const wrap = document.getElementById('db-toggle-wrap');
+      const knob = document.getElementById('db-toggle-knob');
+      const label = document.getElementById('db-toggle-label');
+      if (!wrap) return;
+      const nowOn = wrap.dataset.on === '1';
+      const next = !nowOn;
+
+      const msg = next
+        ? 'เปิด Device Binding?\n\nระบบจะเริ่มผูกอุปกรณ์อัตโนมัติเมื่อเช็คชื่อ'
+        : 'ปิด Device Binding?\n\nทุกคนจะสามารถเข้าใช้งานได้จากทุกอุปกรณ์โดยไม่ต้องผูก';
+      if (!confirm(msg)) return;
+
+      showSync();
+      await fbSet('/settings/deviceBindingEnabled', next);
+      deviceBindingEnabled = next;
+      hideSync();
+
+      wrap.dataset.on = next ? '1' : '0';
+      wrap.style.background = next ? '#22c55e' : '#64748b';
+      knob.style.left = next ? '24px' : '2px';
+      label.textContent = next ? 'เปิดใช้งาน' : 'ปิดอยู่';
+      label.style.color = next ? '#4ade80' : '#f87171';
     };
 
     // รีเซ็ต Device Binding ทั้งกลุ่มที่ใช้ Device เดียวกัน
