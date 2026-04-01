@@ -1710,38 +1710,24 @@
     let areaCheckinMethods = {};  // { locationId: 'qr'|'face'|'both'|'gps_button' }
     let deviceBindings = {};      // { empId: { deviceId, boundAt, boundByName } }
 
-    // ===== Device Fingerprint (ทำงานข้ามเบราว์เซอร์บนอุปกรณ์เดียวกัน) =====
+    // =====================================================================
+    //  DEVICE FINGERPRINT — ข้ามเบราว์เซอร์บนอุปกรณ์เดียวกัน
+    //  ใช้เฉพาะ hardware signals ที่เหมือนกันทุกเบราว์เซอร์
+    //  ❌ ไม่ใช้ Canvas (ต่างกันตาม rendering engine)
+    //  ❌ ไม่ใช้ UUID/localStorage (แยกตามเบราว์เซอร์)
+    //  ✅ ใช้ Screen + GPU + CPU + WebGL params (ค่าจากฮาร์ดแวร์)
+    // =====================================================================
     function _simpleHash(str) {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
         const c = str.charCodeAt(i);
         hash = ((hash << 5) - hash) + c;
-        hash |= 0; // to 32-bit int
+        hash |= 0;
       }
       return (hash >>> 0).toString(36).toUpperCase();
     }
 
-    function _getCanvasFingerprint() {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 200; canvas.height = 50;
-        const ctx = canvas.getContext('2d');
-        ctx.textBaseline = 'top';
-        ctx.font = '14px Arial';
-        ctx.fillStyle = '#f60';
-        ctx.fillRect(50, 0, 80, 25);
-        ctx.fillStyle = '#069';
-        ctx.fillText('2PS-FP-🎨', 2, 15);
-        ctx.fillStyle = 'rgba(102,204,0,0.7)';
-        ctx.fillText('2PS-FP-🎨', 4, 17);
-        ctx.beginPath();
-        ctx.arc(100, 25, 20, 0, Math.PI * 2);
-        ctx.fillStyle = '#a33';
-        ctx.fill();
-        return canvas.toDataURL();
-      } catch (e) { return 'no-canvas'; }
-    }
-
+    // WebGL vendor/renderer — GPU-specific, cross-browser consistent
     function _getWebGLFingerprint() {
       try {
         const canvas = document.createElement('canvas');
@@ -1754,83 +1740,63 @@
       } catch (e) { return 'no-webgl'; }
     }
 
-    // สร้าง UUID สุ่มเฉพาะเครื่อง (เก็บใน localStorage ถาวร)
-    function _getDeviceUUID() {
-      const key = '2ps_device_uuid';
-      let uuid = localStorage.getItem(key);
-      if (!uuid) {
-        // crypto.randomUUID() หรือ fallback
-        if (crypto && crypto.randomUUID) {
-          uuid = crypto.randomUUID();
-        } else {
-          uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-            const r = Math.random() * 16 | 0;
-            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-          });
-        }
-        localStorage.setItem(key, uuid);
-      }
-      return uuid;
+    // WebGL GPU parameters — ค่าจาก GPU เหมือนกันทุกเบราว์เซอร์
+    function _getWebGLParams() {
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) return 'no-gl-params';
+        const params = [
+          gl.getParameter(gl.MAX_TEXTURE_SIZE),
+          gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+          gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS),
+          gl.getParameter(gl.MAX_VERTEX_ATTRIBS),
+          gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS),
+          gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS),
+          gl.getParameter(gl.MAX_VARYING_VECTORS),
+          gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS),
+          gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS),
+          gl.getParameter(gl.ALIASED_LINE_WIDTH_RANGE)?.[1] || 0,
+          gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)?.[1] || 0,
+          gl.getParameter(gl.MAX_VIEWPORT_DIMS)?.[0] || 0
+        ];
+        // extensions list — GPU-specific
+        const exts = (gl.getSupportedExtensions() || []).sort().join(',');
+        return params.join('|') + '||' + _simpleHash(exts);
+      } catch (e) { return 'no-gl-params'; }
     }
 
     function _generateDeviceFingerprint() {
-      // ใช้ UUID เฉพาะเครื่อง + hardware fingerprint รวมกัน
-      // UUID แก้ปัญหามือถือรุ่นเดียวกันได้ fingerprint ซ้ำ
-      const deviceUUID = _getDeviceUUID();
+      // ใช้เฉพาะ hardware signals ที่เหมือนกันทุกเบราว์เซอร์
       const components = [
-        deviceUUID,
-        screen.width + 'x' + screen.height,
-        screen.colorDepth,
-        window.devicePixelRatio || 1,
-        navigator.hardwareConcurrency || 'unknown',
-        navigator.maxTouchPoints || 0,
-        navigator.platform || 'unknown',
-        navigator.language || 'unknown',
+        screen.width + 'x' + screen.height,               // หน้าจอ
+        screen.availWidth + 'x' + screen.availHeight,      // พื้นที่ใช้ได้
+        screen.colorDepth,                                  // ความลึกสี
+        window.devicePixelRatio || 1,                       // density
+        navigator.hardwareConcurrency || 'unknown',         // CPU cores
+        navigator.maxTouchPoints || 0,                      // touch points
+        navigator.platform || 'unknown',                    // platform (iPhone/Linux)
         Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
-        _getWebGLFingerprint(),
-        _getCanvasFingerprint()
+        _getWebGLFingerprint(),                             // GPU vendor + renderer
+        _getWebGLParams()                                   // GPU parameters + extensions
       ];
       const raw = components.join('|||');
       const h1 = _simpleHash(raw);
       const h2 = _simpleHash(raw + '_salt2');
       const h3 = _simpleHash(raw + '_salt3');
-      return 'FP_' + h1 + h2 + h3;
+      const h4 = _simpleHash(raw + '_salt4');
+      return 'HW_' + h1 + h2 + h3 + h4;
     }
 
     let _cachedDeviceFingerprint = null;
 
-    // สร้าง fingerprint แบบเก่า (ไม่มี UUID) เพื่อ migration
-    function _generateOldFingerprint() {
-      const components = [
-        screen.width + 'x' + screen.height,
-        screen.colorDepth,
-        window.devicePixelRatio || 1,
-        navigator.hardwareConcurrency || 'unknown',
-        navigator.maxTouchPoints || 0,
-        navigator.platform || 'unknown',
-        navigator.language || 'unknown',
-        Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
-        _getWebGLFingerprint(),
-        _getCanvasFingerprint()
-      ];
-      const raw = components.join('|||');
-      const h1 = _simpleHash(raw);
-      const h2 = _simpleHash(raw + '_salt2');
-      const h3 = _simpleHash(raw + '_salt3');
-      return 'FP_' + h1 + h2 + h3;
-    }
-
     function getDeviceId() {
       if (!_cachedDeviceFingerprint) {
-        // เก็บ fingerprint แบบเก่าไว้ก่อน (สำหรับ migration)
-        if (!localStorage.getItem('2ps_old_fingerprint')) {
-          localStorage.setItem('2ps_old_fingerprint', _generateOldFingerprint());
-        }
         _cachedDeviceFingerprint = _generateDeviceFingerprint();
       }
-      // Migration: ถ้ามี device ID เก่าใน localStorage ให้เก็บไว้เพื่อ fallback
+      // เก็บ legacy IDs สำหรับ migration
       const oldId = localStorage.getItem('2ps_device_id');
-      if (oldId && !localStorage.getItem('2ps_device_id_legacy')) {
+      if (oldId && oldId !== _cachedDeviceFingerprint && !localStorage.getItem('2ps_device_id_legacy')) {
         localStorage.setItem('2ps_device_id_legacy', oldId);
       }
       localStorage.setItem('2ps_device_id', _cachedDeviceFingerprint);
