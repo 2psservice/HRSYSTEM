@@ -1529,7 +1529,7 @@
     //  INIT — load all data from Firebase then show login
     // =====================================================================
     async function initApp() {
-      showLoader('กำลังโหลดข้อมูลจาก Firebase...');
+      showLoader('ขอให้มีความสุขในวันทำงาน');
       // Recovery: sync ข้อมูลค้างจาก session ก่อน
       _fbRecoverPending();
       // เริ่ม LINE notification timer อิสระ
@@ -10135,11 +10135,12 @@
       if (sizeBar) sizeBar.style.display = 'none';
       if (faceRafHandle) { cancelAnimationFrame(faceRafHandle); faceRafHandle = null; }
       if (faceStream) { faceStream.getTracks().forEach(t => t.stop()); faceStream = null; }
+      _faceTorchOn = false;
       try {
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } }, audio: false
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false
           });
         } catch {
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -10148,6 +10149,10 @@
         const v = document.getElementById('face-vid');
         v.srcObject = stream;
         await v.play();
+
+        // ── เปิดแฟลช (torch) อัตโนมัติเมื่อแสงน้อย ──
+        _tryEnableTorch(stream);
+
         setFaceRing('blue');
         const ok = await loadFaceModels();
         if (!ok) { setFaceStatus('error', '❌ โหลดโมเดล AI ไม่สำเร็จ กรุณาลองใหม่'); return; }
@@ -10172,13 +10177,13 @@
     // ============================================================
     //  FACE SECURITY CONSTANTS  (ปรับค่าได้ตามสภาพแวดล้อม)
     // ============================================================
-    const FACE_MATCH_THRESHOLD = 0.46;  // สมดุล: สแกนง่าย แต่คนอื่นแทนยาก
-    const FACE_CONFIRM_FRAMES = 2;     // ต้องผ่าน 2 เฟรมติดกัน — ป้องกัน false positive
-    const FACE_CONFIRM_DIST_MAX = 0.44;  // แต่ละเฟรมต้องมั่นใจพอ
-    const FACE_SCORE_MIN = 0.45;  // กล้องธรรมดาผ่านได้ แต่ต้องเห็นหน้าชัด
+    const FACE_MATCH_THRESHOLD = 0.48;  // ผ่อนขึ้น: สแกนติดง่าย (ความปลอดภัยอยู่ที่ ambiguity check)
+    const FACE_CONFIRM_FRAMES = 2;     // ผ่าน 2 เฟรมติดกัน — เร็วขึ้น
+    const FACE_CONFIRM_DIST_MAX = 0.46;  // ผ่อนให้ confirm ง่ายขึ้น
+    const FACE_SCORE_MIN = 0.35;  // ลดลง: หาใบหน้าง่ายขึ้น ทั้งแสงน้อยและกล้องธรรมดา
     const FACE_REG_SAMPLES = 15;    // เก็บตัวอย่างเยอะไว้เพื่อความแม่นยำ
     const FACE_REG_SCORE_MIN = 0.45;
-    const FACE_SIZE_MIN = 0.05;  // ต้องเห็นหน้าพอสมควร
+    const FACE_SIZE_MIN = 0.03;  // ลดลง: รับหน้าเล็กขึ้น ไม่ต้องจ่อชิดมาก
     const FACE_SIZE_MAX = 0.95;
     const FACE_LIVENESS_FRAMES = 3;     // ต้องผ่าน 3 เฟรมก่อน — ป้องกันรูปภาพนิ่ง
 
@@ -10192,6 +10197,63 @@
     const EAR_OPEN_THRESH = 0.28;  // EAR สูงกว่านี้ = ตาเปิดหลัง blink
     const EAR_SMOOTH_FRAMES = 3;     // หาค่าเฉลี่ย 3 เฟรม ลด noise
     const LIVENESS_BLINKS_NEEDED = 1;     // ต้องกะพริบ 1 ครั้งก่อนสแกนผ่าน
+
+    // ── Low-light helpers ──────────────────────────────────────────────
+    let _faceTorchOn = false;
+    let _faceLowLight = false;
+
+    // เปิดแฟลช (torch) ถ้ากล้องรองรับ
+    async function _tryEnableTorch(stream) {
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.torch) {
+          await track.applyConstraints({ advanced: [{ torch: true }] });
+          _faceTorchOn = true;
+        }
+      } catch (_) { /* torch not supported — OK */ }
+    }
+
+    // วัดความสว่างเฉลี่ยของภาพ (0-255)
+    function _measureBrightness(canvas) {
+      const ctx = canvas.getContext('2d');
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      let sum = 0;
+      // sample ทุก 16 px เพื่อความเร็ว
+      for (let i = 0; i < d.length; i += 64) {
+        sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+      }
+      return sum / (d.length / 64);
+    }
+
+    // ปรับความสว่าง + contrast ของ canvas เมื่อแสงน้อย
+    function _enhanceLowLight(canvas) {
+      const ctx = canvas.getContext('2d');
+      const brightness = _measureBrightness(canvas);
+      _faceLowLight = brightness < 80;
+      if (!_faceLowLight) return;
+
+      // ใช้ CSS filter ถ้า browser รองรับ (เร็วกว่า pixel manipulation)
+      const boost = Math.min(2.0, 120 / Math.max(brightness, 1));
+      const contrastBoost = 1.2;
+      ctx.filter = `brightness(${boost}) contrast(${contrastBoost})`;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+    }
+
+    // แสดง/ซ่อน screen light (หน้าจอเรืองแสงช่วยส่องหน้า)
+    function _showScreenLight(show) {
+      let el = document.getElementById('face-screen-light');
+      if (show && !el) {
+        el = document.createElement('div');
+        el.id = 'face-screen-light';
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:99998;pointer-events:none;transition:opacity .3s;';
+        document.body.appendChild(el);
+      }
+      if (el) el.style.opacity = show ? '1' : '0';
+      if (!show && el) setTimeout(() => el.remove(), 350);
+    }
 
     let _faceConfirmBuf = [];
     let _faceFrameCount = 0;            // นับเฟรมทั้งหมดตั้งแต่เปิดกล้อง (liveness)
@@ -10320,9 +10382,17 @@
       canvas.width = 320; canvas.height = 240;
       canvas.getContext('2d').drawImage(v, 0, 0, 320, 240);
 
+      // ── ปรับความสว่างอัตโนมัติเมื่อแสงน้อย ──
+      _enhanceLowLight(canvas);
+      if (_faceLowLight && !document.getElementById('face-screen-light')) {
+        _showScreenLight(true); // หน้าจอเรืองแสงช่วยส่องหน้า
+      } else if (!_faceLowLight && document.getElementById('face-screen-light')) {
+        _showScreenLight(false);
+      }
+
       const opts = new faceapi.TinyFaceDetectorOptions({
         inputSize: 224,
-        scoreThreshold: FACE_SCORE_MIN
+        scoreThreshold: _faceLowLight ? 0.35 : FACE_SCORE_MIN  // ลด threshold เมื่อแสงน้อย
       });
 
       let det;
@@ -10342,7 +10412,7 @@
         const sizeBar = document.getElementById('face-size-bar-wrap');
         if (sizeBar) sizeBar.style.display = 'none';
         setFaceStatus('info', '🔍 กำลังหาใบหน้า...');
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 80));
         if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
         return;
       }
@@ -10422,15 +10492,15 @@
           return;
         }
 
-        // All 3 steps done
+        // All 3 steps done — เก็บ 3 มุมแยกกัน (ไม่เฉลี่ยรวม) เพื่อความแม่นยำในการจับคู่
         faceDetecting = false;
         _updateFaceRegSteps(3); // mark all done
         setFaceRing('green');
         setFaceStatus('success', '<div style="font-size:22px;margin-bottom:4px;">🎉</div><div>เก็บตัวอย่างครบทั้ง 3 มุมแล้ว!</div><div style="font-size:11px;margin-top:4px;opacity:.8;">กำลังบันทึก...</div>');
-        const finalDesc = _computeMeanDescriptor(_regStepDescs);
+        const allAngleDescs = _regStepDescs.slice(); // เก็บ 3 มุมแยก: [front, left, right]
         _regStepDescs = [];
         _regStep = 0;
-        await _handleFaceRegisterMulti([finalDesc]);
+        await _handleFaceRegisterMulti(allAngleDescs);
         return;
       }
 
@@ -10458,7 +10528,7 @@
           hasAny
             ? `<div style="font-size:22px;margin-bottom:4px;">😕</div><div>ไม่รู้จักใบหน้านี้</div><div style="font-size:11px;margin-top:4px;opacity:.7;">ขยับหน้าเข้า-ออก หรือแจ้ง HR ลงทะเบียน</div>`
             : `<div style="font-size:22px;margin-bottom:4px;">⚠️</div>ยังไม่มีพนักงานลงทะเบียนใบหน้าในระบบ`);
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 200));
         if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
         return;
       }
@@ -10484,7 +10554,7 @@
         setFaceStatus('info',
           `<span style="font-weight:700;">${isCheckin ? '🟢' : '🔴'} ${matched.emp.name}</span>
        <span style="font-size:11px;color:#475569;margin-left:6px;">${matched.emp.dept || ''}</span>`);
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 50));
         if (faceDetecting) faceRafHandle = requestAnimationFrame(_faceDetectLoop);
         return;
       }
@@ -11180,8 +11250,8 @@
         const otherDescs = (other.faceDescriptors || [other.faceDescriptor])
           .filter(d => Array.isArray(d) && d.length === 128);
         const otherMin = Math.min(...otherDescs.map(d => faceapi.euclideanDistance(new Float32Array(d), query)));
-        // Reject if another person is within 0.08 of best match (ambiguous identity)
-        if (otherMin < minDist + 0.08 && otherMin <= FACE_MATCH_THRESHOLD) return null;
+        // Reject if another person is within 0.12 of best match (ambiguous identity — เดิม 0.08)
+        if (otherMin < minDist + 0.12 && otherMin <= FACE_MATCH_THRESHOLD) return null;
       }
 
       if (minDist > FACE_MATCH_THRESHOLD) return null;
@@ -11192,6 +11262,10 @@
       faceDetecting = false;
       if (faceRafHandle) { cancelAnimationFrame(faceRafHandle); faceRafHandle = null; }
       if (faceStream) { faceStream.getTracks().forEach(t => t.stop()); faceStream = null; }
+      // ── ปิดแฟลช + หน้าจอเรืองแสง ──
+      _faceTorchOn = false;
+      _faceLowLight = false;
+      _showScreenLight(false);
       document.getElementById('face-modal').classList.remove('active');
       // Reset UI state
       _setFaceNameBadge(null);
@@ -15947,6 +16021,10 @@ async function handle(req) {
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-clock mr-2"></i>รออนุมัติ <span id="ls-pending-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;margin-left:4px;"></span>
       </button>
+      <button onclick="lsShowTab('history')" id="ls-tab-history"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-history mr-2"></i>ประวัติการลา
+      </button>
       <button onclick="lsShowTab('holidays')" id="ls-tab-holidays"
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-calendar-week mr-2"></i>กำหนดวันหยุด
@@ -16011,6 +16089,32 @@ async function handle(req) {
           <button onclick="lsLoadApprovals()" style="font-size:11px;color:#3b82f6;background:none;border:none;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;"><i class="fas fa-sync mr-1"></i>รีเฟรช</button>
         </div>
         <div id="ls-approve-list" style="min-height:100px;">
+          <div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: ประวัติการลา -->
+    <div id="ls-pane-history" style="display:none;">
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;">
+        <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;"><i class="fas fa-history" style="color:#7c3aed;margin-right:8px;"></i>ประวัติการลาทั้งหมด</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="ls-hist-month" onchange="lsLoadLeaveHistory()" style="padding:7px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:12px;font-family:Sarabun,sans-serif;cursor:pointer;outline:none;min-width:140px;">
+            </select>
+            <select id="ls-hist-status" onchange="lsFilterLeaveHistory()" style="padding:7px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:12px;font-family:Sarabun,sans-serif;cursor:pointer;outline:none;">
+              <option value="">ทุกสถานะ</option>
+              <option value="approved">อนุมัติแล้ว</option>
+              <option value="pending">รออนุมัติ</option>
+              <option value="rejected">ไม่อนุมัติ</option>
+            </select>
+            <button onclick="lsLoadLeaveHistory()" style="font-size:11px;color:#3b82f6;background:none;border:none;cursor:pointer;font-family:Sarabun,sans-serif;font-weight:600;"><i class="fas fa-sync mr-1"></i>รีเฟรช</button>
+          </div>
+        </div>
+        <!-- สรุปสถิติ -->
+        <div id="ls-hist-stats" style="padding:12px 20px;border-bottom:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap;"></div>
+        <!-- รายการ -->
+        <div id="ls-hist-list" style="min-height:100px;">
           <div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>
         </div>
       </div>
@@ -16247,7 +16351,7 @@ async function handle(req) {
     }
 
     window.lsShowTab = function (tab) {
-      ['types', 'approve', 'holidays', 'scanner', 'photos'].forEach(t => {
+      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce'].forEach(t => {
         const pane = document.getElementById(`ls-pane-${t}`);
         const btn = document.getElementById(`ls-tab-${t}`);
         if (!pane || !btn) return;
@@ -16258,6 +16362,7 @@ async function handle(req) {
         btn.style.boxShadow = active ? '0 1px 4px rgba(0,0,0,.1)' : 'none';
       });
       if (tab === 'photos') lsLoadPhotos();
+      if (tab === 'history') lsLoadLeaveHistory();
     };
 
     // =====================================================================
@@ -17091,6 +17196,141 @@ async function handle(req) {
         el.innerHTML = `<div style="text-align:center;padding:24px;color:#dc2626;font-size:13px;">โหลดข้อมูลไม่สำเร็จ: ${err.message}</div>`;
       }
     }
+
+    // =====================================================================
+    //  ประวัติการลา — โหลดทั้งหมดจาก Firebase แล้วกรองตามเดือน/สถานะ
+    // =====================================================================
+    let _lsHistAllReqs = []; // cache ทั้งหมด
+
+    window.lsLoadLeaveHistory = async function () {
+      const el = document.getElementById('ls-hist-list');
+      const monthSel = document.getElementById('ls-hist-month');
+      if (!el) return;
+      el.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>';
+
+      try {
+        const raw = await fbGet('/leaveRequests');
+        _lsHistAllReqs = [];
+        if (raw && typeof raw === 'object') {
+          Object.entries(raw).forEach(([empId, reqs]) => {
+            if (!reqs || typeof reqs !== 'object') return;
+            Object.entries(reqs).forEach(([reqId, r]) => {
+              if (r) _lsHistAllReqs.push({ ...r, _empId: empId, _reqId: reqId });
+            });
+          });
+        }
+        _lsHistAllReqs.sort((a, b) => String(b.submittedAt || b.startDate || '').localeCompare(String(a.submittedAt || a.startDate || '')));
+
+        // สร้างตัวเลือกเดือน (จากข้อมูลจริง + ย้อนหลัง 6 เดือน)
+        const months = new Set();
+        _lsHistAllReqs.forEach(r => {
+          if (r.startDate) months.add(r.startDate.slice(0, 7));
+        });
+        const now = new Date();
+        for (let i = 0; i < 6; i++) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          months.add(d.toISOString().slice(0, 7));
+        }
+        const sorted = [...months].sort().reverse();
+        const prev = monthSel.value;
+        monthSel.innerHTML = '<option value="">ทุกเดือน</option>' + sorted.map(m => {
+          const [y, mo] = m.split('-');
+          const label = new Date(+y, +mo - 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+          return `<option value="${m}">${label}</option>`;
+        }).join('');
+        if (prev && sorted.includes(prev)) monthSel.value = prev;
+
+        lsFilterLeaveHistory();
+      } catch (err) {
+        el.innerHTML = `<div style="text-align:center;padding:24px;color:#dc2626;font-size:13px;">โหลดข้อมูลไม่สำเร็จ: ${err.message}</div>`;
+      }
+    };
+
+    window.lsFilterLeaveHistory = function () {
+      const el = document.getElementById('ls-hist-list');
+      const statsEl = document.getElementById('ls-hist-stats');
+      const month = document.getElementById('ls-hist-month')?.value || '';
+      const status = document.getElementById('ls-hist-status')?.value || '';
+      if (!el) return;
+
+      let filtered = _lsHistAllReqs;
+      if (month) filtered = filtered.filter(r => (r.startDate || '').startsWith(month));
+      if (status) filtered = filtered.filter(r => r.status === status);
+
+      // สรุปสถิติ
+      const cntApproved = filtered.filter(r => r.status === 'approved').length;
+      const cntPending = filtered.filter(r => r.status === 'pending').length;
+      const cntRejected = filtered.filter(r => r.status === 'rejected').length;
+      const totalDays = filtered.filter(r => r.status === 'approved').reduce((s, r) => s + (r.days || 1), 0);
+      if (statsEl) statsEl.innerHTML = `
+        <div style="background:#f0fdf4;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;color:#15803d;">
+          <i class="fas fa-check-circle" style="margin-right:4px;"></i>อนุมัติ ${cntApproved} รายการ (${totalDays} วัน)
+        </div>
+        <div style="background:#fefce8;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;color:#a16207;">
+          <i class="fas fa-clock" style="margin-right:4px;"></i>รอ ${cntPending} รายการ
+        </div>
+        <div style="background:#fef2f2;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;color:#dc2626;">
+          <i class="fas fa-times-circle" style="margin-right:4px;"></i>ไม่อนุมัติ ${cntRejected} รายการ
+        </div>
+        <div style="background:#eff6ff;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;color:#1d4ed8;">
+          <i class="fas fa-list" style="margin-right:4px;"></i>ทั้งหมด ${filtered.length} รายการ
+        </div>`;
+
+      if (!filtered.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;"><i class="fas fa-folder-open" style="font-size:32px;color:#e2e8f0;display:block;margin-bottom:10px;"></i><div style="font-size:13px;">ไม่พบรายการในช่วงเวลาที่เลือก</div></div>';
+        return;
+      }
+
+      el.innerHTML = filtered.map(r => {
+        const dtS = r.startDate || '';
+        const dtE = r.endDate || '';
+        const dateRange = dtS === dtE ? dtS : `${dtS} ถึง ${dtE}`;
+        const sub = r.submittedAt ? new Date(r.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+
+        let statusBadge = '', statusBg = '';
+        if (r.status === 'approved') {
+          const by = r.approvedBy ? ` โดย ${r.approvedBy}` : '';
+          const at = r.approvedAt ? new Date(r.approvedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+          statusBadge = `<span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;"><i class="fas fa-check" style="margin-right:3px;"></i>อนุมัติ${by}</span>`;
+          if (at) statusBadge += `<span style="font-size:10px;color:#94a3b8;margin-left:4px;">${at}</span>`;
+          statusBg = '#f0fdf4';
+        } else if (r.status === 'rejected') {
+          const by = r.rejectedBy ? ` โดย ${r.rejectedBy}` : '';
+          statusBadge = `<span style="background:#fee2e2;color:#dc2626;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;"><i class="fas fa-times" style="margin-right:3px;"></i>ไม่อนุมัติ${by}</span>`;
+          statusBg = '#fef2f2';
+        } else {
+          statusBadge = `<span style="background:#fef9c3;color:#a16207;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;"><i class="fas fa-clock" style="margin-right:3px;"></i>รออนุมัติ</span>`;
+          statusBg = '#fffbeb';
+        }
+
+        return `
+      <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;background:${statusBg};">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="width:30px;height:30px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fas fa-user" style="color:#fff;font-size:11px;"></i>
+              </div>
+              <div>
+                <span style="font-size:13px;font-weight:700;color:#1e293b;">${r.empName || r._empId}</span>
+                <span style="font-size:11px;color:#94a3b8;margin-left:6px;">${r.dept || ''}</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+              <span style="background:#eff6ff;color:#1d4ed8;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;">${r.type || '-'}</span>
+              <span style="background:#f0fdf4;color:#15803d;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;"><i class="fas fa-calendar-alt" style="margin-right:3px;font-size:9px;"></i>${dateRange} (${r.days || 1} วัน)</span>
+              ${(r.totalDeduct || 0) > 0 ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;">หักคะแนน ${r.totalDeduct}</span>` : ''}
+            </div>
+            ${r.reason ? `<div style="font-size:11px;color:#475569;background:rgba(255,255,255,.7);padding:6px 10px;border-radius:8px;border-left:3px solid #cbd5e1;margin-bottom:4px;"><i class="fas fa-comment-alt" style="margin-right:4px;color:#94a3b8;font-size:9px;"></i>${r.reason}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+            ${statusBadge}
+            ${sub ? `<div style="font-size:10px;color:#94a3b8;">ส่งเมื่อ ${sub}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+      }).join('');
+    };
 
     window.lsApproveReq = async function (empId, reqId) {
       showSync();
