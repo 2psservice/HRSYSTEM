@@ -13812,13 +13812,17 @@ async function handle(req) {
           isLate, isEarly, shiftIn, shiftOut,
           holidayName: specialHolMap[dk] || '',
           locationName: locLabel,
+          checkOutLocationName: rec?.checkOutLocationName || '',
           checkInMethod: method,
+          checkOutMethod: rec?.checkOutMethod || rec?.checkoutMethod || '',
           distMeters: rec?.distMeters || 0,
           otHours: rec?.otHours || 0,
-        }).replace(/"/g, '&quot;');
+        });
+        // Encode to avoid HTML escaping issues inside onclick attribute
+        const clickDataEnc = encodeURIComponent(clickData);
 
         cells += `
-    <div onclick="showCalDayDetail(&quot;${clickData}&quot;)" style="cursor:pointer;padding:2px;">
+    <div onclick="showCalDayDetail(decodeURIComponent('${clickDataEnc}'))" style="cursor:pointer;padding:2px;">
       <div style="background:${s.bg};border:1.5px solid ${s.border};border-radius:10px;padding:5px 4px 4px;min-height:68px;position:relative;${todayRing}transition:transform .12s;" onmousedown="this.style.transform='scale(.93)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.93)'" ontouchend="this.style.transform=''">
         <!-- Day number -->
         <div style="font-size:13px;font-weight:700;color:${s.dayCol};text-align:center;line-height:1.2;">${d}</div>
@@ -13939,8 +13943,20 @@ async function handle(req) {
       const deductPts = (d.isLate ? 2 : 0) + (d.isEarly ? 2 : 0) + (d.leaveDeduct || 0);
 
       // ── ประเภทการเข้างาน (method) icon + label ──
-      const _methodMap = { face: { icon: 'fa-smile', label: 'สแกนใบหน้า', color: '#7c3aed' }, scanner: { icon: 'fa-fingerprint', label: 'สแกนนิ้ว', color: '#0891b2' }, gps_button: { icon: 'fa-map-marker-alt', label: 'GPS ปุ่มกด', color: '#16a34a' }, admin: { icon: 'fa-user-shield', label: 'แอดมินบันทึก', color: '#64748b' } };
-      const _m = _methodMap[d.checkInMethod] || { icon: 'fa-qrcode', label: d.checkInMethod ? d.checkInMethod : 'QR Code', color: '#f59e0b' };
+      const _methodMap = {
+        face: { icon: 'fa-smile', label: 'สแกนใบหน้า', color: '#7c3aed' },
+        scanner: { icon: 'fa-fingerprint', label: 'สแกนนิ้ว', color: '#0891b2' },
+        finger: { icon: 'fa-fingerprint', label: 'สแกนนิ้ว', color: '#0891b2' },
+        qr: { icon: 'fa-qrcode', label: 'สแกนคิวอาร์', color: '#f59e0b' },
+        qrcode: { icon: 'fa-qrcode', label: 'สแกนคิวอาร์', color: '#f59e0b' },
+        gps_button: { icon: 'fa-map-marker-alt', label: 'GPS ปุ่มกด', color: '#16a34a' },
+        admin: { icon: 'fa-user-shield', label: 'แอดมินบันทึก', color: '#64748b' }
+      };
+
+      const _inMethodKey = d.checkInMethod || '';
+      const _outMethodKey = d.checkOutMethod || '';
+      const _mIn = _methodMap[_inMethodKey] || { icon: 'fa-qrcode', label: _inMethodKey ? _inMethodKey : 'QR Code', color: '#f59e0b' };
+      const _mOut = _methodMap[_outMethodKey || _inMethodKey] || { icon: 'fa-qrcode', label: (_outMethodKey || _inMethodKey) ? (_outMethodKey || _inMethodKey) : 'QR Code', color: '#f59e0b' };
 
       // Time info
       let timeHtml = '';
@@ -13984,16 +14000,38 @@ async function handle(req) {
         ${d.distMeters ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">ระยะห่าง ${d.distMeters} ม.</div>` : ''}
       </div>
     </div>` : ''}
-
-    <!-- ประเภทการเข้างาน -->
+    ${d.checkOutLocationName ? `
     <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
-      <div style="width:40px;height:40px;background:${_m.color}15;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <i class="fas ${_m.icon}" style="color:${_m.color};font-size:16px;"></i>
+      <div style="width:40px;height:40px;background:#fff1f2;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i class="fas fa-sign-out-alt" style="color:#dc2626;font-size:16px;"></i>
       </div>
       <div>
-        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">ประเภทการเข้างาน</div>
-        <div style="font-size:16px;font-weight:800;color:${_m.color};">${_m.label}</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">สถานที่ออกงาน</div>
+        <div style="font-size:16px;font-weight:800;color:#991b1b;">${d.checkOutLocationName}</div>
       </div>
+    </div>` : ''}
+
+    <!-- ประเภทการเข้างาน -->
+    <div style="display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
+      <div style="display:flex;align-items:flex-start;gap:14px;">
+        <div style="width:40px;height:40px;background:${_mIn.color}15;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas ${_mIn.icon}" style="color:${_mIn.color};font-size:16px;"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">วิธีการเข้างาน</div>
+          <div style="font-size:16px;font-weight:800;color:${_mIn.color};">${_mIn.label}</div>
+        </div>
+      </div>
+      ${d.checkOutTime ? `
+      <div style="display:flex;align-items:flex-start;gap:14px;">
+        <div style="width:40px;height:40px;background:${_mOut.color}15;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas ${_mOut.icon}" style="color:${_mOut.color};font-size:16px;"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">วิธีการออกงาน</div>
+          <div style="font-size:16px;font-weight:800;color:${_mOut.color};">${_mOut.label}</div>
+        </div>
+      </div>` : ''}
     </div>`;
       } else if (d.leaveType) {
         timeHtml = `<div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
@@ -16149,6 +16187,10 @@ async function handle(req) {
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-bullhorn mr-2"></i>ประกาศพนักงาน
       </button>
+      <button onclick="lsShowTab('punish')" id="ls-tab-punish"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-gavel mr-2"></i>ลงโทษพนักงาน
+      </button>
     </div>
 
     <!-- Tab: ประเภทการลา -->
@@ -16449,6 +16491,67 @@ async function handle(req) {
       </div>
     </div>
 
+    <!-- Tab: ลงโทษพนักงาน -->
+    <div id="ls-pane-punish" style="display:none;">
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:16px;">
+        <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;">
+            <i class="fas fa-gavel" style="color:#dc2626;margin-right:8px;"></i>ลงโทษพนักงาน (อนุมัติทันที)
+          </span>
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+            บันทึกเป็น leaveRequests เพื่อให้คะแนนความประพฤติ/ปฏิทินของพนักงานอัปเดต
+          </div>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">พนักงาน</label>
+            <select id="pun-emp"
+              style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">ประเภทการลงโทษ</label>
+            <select id="pun-type"
+              onchange="lsPunishCalcPreview()"
+              style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">
+            </select>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">วันที่เริ่ม</label>
+              <input type="date" id="pun-start"
+                onchange="lsPunishCalcPreview()"
+                style="width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;cursor:pointer;">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">วันที่สิ้นสุด</label>
+              <input type="date" id="pun-end"
+                onchange="lsPunishCalcPreview()"
+                style="width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;cursor:pointer;">
+            </div>
+          </div>
+
+          <div id="pun-preview"
+            style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:10px 12px;font-size:12px;color:#1d4ed8;font-weight:600;">
+            <i class="fas fa-info-circle" style="margin-right:6px;"></i>เลือกข้อมูลเพื่อดูจำนวนวันและหักคะแนน
+          </div>
+
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">เหตุผล / หมายเหตุ</label>
+            <textarea id="pun-reason" rows="3" placeholder="เช่น ใบเตือนจากการ ... / พักงานเนื่องจาก ..." 
+              style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;resize:vertical;"></textarea>
+          </div>
+
+          <button onclick="lsPunishDo()"
+            style="width:100%;padding:12px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;">
+            <i class="fas fa-check-circle"></i>ลงโทษ & อนุมัติ
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>`;
 
       lsLoadTypes();
@@ -16456,10 +16559,12 @@ async function handle(req) {
       lsLoadHolidays();
       scanLoadHistory();
       scanInitLocation();
+      lsInitPunish();
+      lsLoadAnnouncements();
     }
 
     window.lsShowTab = function (tab) {
-      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce'].forEach(t => {
+      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce', 'punish'].forEach(t => {
         const pane = document.getElementById(`ls-pane-${t}`);
         const btn = document.getElementById(`ls-tab-${t}`);
         if (!pane || !btn) return;
@@ -16471,6 +16576,166 @@ async function handle(req) {
       });
       if (tab === 'photos') lsLoadPhotos();
       if (tab === 'history') lsLoadLeaveHistory();
+      if (tab === 'punish') lsInitPunish();
+      if (tab === 'announce') lsLoadAnnouncements();
+    };
+
+    // =====================================================================
+    //  ADMIN: Punish employees (พักงาน/ใบเตือน) + Admin announcements
+    // =====================================================================
+    window.lsInitPunish = async function () {
+      const empSel = document.getElementById('pun-emp');
+      const typeSel = document.getElementById('pun-type');
+      if (!empSel || !typeSel) return;
+
+      // employee list
+      empSel.innerHTML = (db.employees || []).map(e => (
+        `<option value="${e._key}">${e.name} (${e.dept || '-'})</option>`
+      )).join('');
+
+      // default dates
+      const sEl = document.getElementById('pun-start');
+      const eEl = document.getElementById('pun-end');
+      if (sEl && eEl) {
+        sEl.value = todayStr;
+        eEl.value = todayStr;
+      }
+
+      // load leave types (use the same types table, but filter only punishment types)
+      const types = await getLeaveTypes(false);
+      const punishTypes = (types || []).filter(t => ['พักงาน', 'หนังสือตักเตือน'].includes(t.name));
+      const list = punishTypes.length ? punishTypes : (types || []);
+
+      typeSel.innerHTML = (list || []).map(t => (
+        `<option value="${t.name}" data-deduct="${t.deduct ?? 1}">${t.name === 'หนังสือตักเตือน' ? 'ใบเตือน' : t.name}</option>`
+      )).join('');
+
+      lsPunishCalcPreview();
+    };
+
+    window.lsPunishCalcPreview = function () {
+      const typeSel = document.getElementById('pun-type');
+      const sEl = document.getElementById('pun-start');
+      const eEl = document.getElementById('pun-end');
+      const prevEl = document.getElementById('pun-preview');
+      if (!typeSel || !sEl || !eEl || !prevEl) return;
+      const deductPerDay = parseFloat(typeSel.selectedOptions?.[0]?.dataset?.deduct || '0');
+      const startDate = sEl.value;
+      const endDate = eEl.value;
+      if (!startDate || !endDate) return;
+      const days = countWorkDays(startDate, endDate);
+      const totalDeduct = deductPerDay * days;
+      prevEl.innerHTML = `<i class="fas fa-info-circle" style="margin-right:6px;"></i>จำนวนวัน ${days} วัน · หักคะแนน: -${Number.isFinite(totalDeduct) ? totalDeduct : 0} คะแนน`;
+    };
+
+    window.lsPunishDo = async function () {
+      const empSel = document.getElementById('pun-emp');
+      const typeSel = document.getElementById('pun-type');
+      const sEl = document.getElementById('pun-start');
+      const eEl = document.getElementById('pun-end');
+      const reasonEl = document.getElementById('pun-reason');
+      if (!empSel || !typeSel || !sEl || !eEl || !reasonEl) return;
+
+      const empKey = empSel.value;
+      const typeName = typeSel.value;
+      const startDate = sEl.value;
+      const endDate = eEl.value;
+      const reason = reasonEl.value.trim();
+
+      if (!empKey) return alert('กรุณาเลือกพนักงาน');
+      if (!typeName) return alert('กรุณาเลือกประเภทการลงโทษ');
+      if (!startDate || !endDate) return alert('กรุณาเลือกช่วงวันที่');
+      if (!reason) return alert('กรุณาใส่เหตุผล / หมายเหตุ');
+
+      const emp = (db.employees || []).find(x => x._key === empKey);
+      if (!emp) return alert('ไม่พบข้อมูลพนักงาน');
+
+      const deductPerDay = parseFloat(typeSel.selectedOptions?.[0]?.dataset?.deduct || '0');
+      const days = countWorkDays(startDate, endDate);
+      const totalDeduct = deductPerDay * days;
+
+      showSync();
+      try {
+        await fbPush(`/leaveRequests/${empKey}`, {
+          empId: empKey,
+          empName: emp.name,
+          dept: emp.dept || '',
+          type: typeName,
+          deductPerDay,
+          startDate,
+          endDate,
+          days,
+          totalDeduct,
+          reason,
+          status: 'approved',
+          submittedAt: new Date().toISOString(),
+          approvedAt: new Date().toISOString(),
+          approvedBy: CU.displayName || CU.username || CU.id
+        });
+        hideSync();
+        lsToast('ลงโทษสำเร็จแล้ว', '#dc2626');
+        lsInitPunish();
+      } catch (e) {
+        hideSync();
+        alert('ผิดพลาด: ' + e.message);
+      }
+    };
+
+    window.lsPostAnnouncement = async function () {
+      const titleEl = document.getElementById('ann-title');
+      const contentEl = document.getElementById('ann-content');
+      if (!titleEl || !contentEl) return;
+      const title = (titleEl.value || '').trim();
+      const content = (contentEl.value || '').trim();
+      if (!title || !content) return alert('กรุณากรอกหัวข้อและเนื้อหาประกาศ');
+
+      showSync();
+      try {
+        await fbPush('/announcements', {
+          title,
+          content,
+          createdAt: new Date().toISOString(),
+          createdBy: CU.displayName || CU.username || CU.id
+        });
+        titleEl.value = '';
+        contentEl.value = '';
+        hideSync();
+        lsToast('โพสต์ประกาศสำเร็จ', '#059669');
+        await lsLoadAnnouncements();
+      } catch (e) {
+        hideSync();
+        alert('ผิดพลาด: ' + e.message);
+      }
+    };
+
+    window.lsLoadAnnouncements = async function () {
+      const container = document.getElementById('ls-announce-list');
+      if (!container) return;
+      container.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>';
+      try {
+        const raw = await fbGet('/announcements').catch(() => null);
+        const items = raw && typeof raw === 'object'
+          ? Object.entries(raw).filter(([, v]) => v).map(([k, v]) => ({ _key: k, ...v })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+          : [];
+        container.innerHTML = items.length
+          ? items.map(item => {
+            const dt = item.createdAt ? new Date(item.createdAt).toLocaleDateString('th-TH', {
+              day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            }) : '';
+            return `
+              <div style="background:#fff;border-radius:16px;padding:16px 18px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07);border-left:4px solid #059669;">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;">
+                  <div style="font-size:15px;font-weight:700;color:#1e293b;">${item.title || 'ประกาศ'}</div>
+                  <div style="font-size:10px;color:#94a3b8;white-space:nowrap;margin-top:2px;">${dt}</div>
+                </div>
+                <div style="font-size:13px;color:#475569;line-height:1.6;white-space:pre-wrap;">${item.content || ''}</div>
+                ${item.createdBy ? `<div style="font-size:11px;color:#94a3b8;margin-top:8px;">โดย: ${item.createdBy}</div>` : ''}
+              </div>`;
+          }).join('')
+          : '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">ยังไม่มีประกาศ</div>';
+      } catch (e) {
+        container.innerHTML = `<div style="text-align:center;padding:24px;color:#dc2626;font-size:13px;">โหลดประกาศไม่สำเร็จ</div>`;
+      }
     };
 
     // =====================================================================
