@@ -10111,6 +10111,23 @@
 
     // Open face modal — CHECK-OUT mode
     window.openFaceScanCheckout = async function () {
+      // ตรวจสอบว่าพนักงานลงทะเบียนใบหน้าแล้วหรือยัง
+      if (CU.role === 'employee') {
+        const emp = db.employees.find(e => e._key === CU.id);
+        const hasFace = emp && Array.isArray(emp.faceDescriptor) && emp.faceDescriptor.length === 128;
+        if (!hasFace) {
+          window._faceRegReturnToCheckin = false;
+          window._faceRegReturnToCheckout = true;
+          lsToast('⚠️ กรุณาลงทะเบียนใบหน้าก่อนสแกนออกงาน', '#f59e0b');
+          const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+          const btn = isMob
+            ? document.querySelector('[data-mob-tab=emp-face-reg]')
+            : document.querySelector('[data-tab=emp-face-reg]');
+          if (btn) goTab('emp-face-reg', btn);
+          else renderPage('emp-face-reg');
+          return;
+        }
+      }
       faceModalMode = 'checkout';
       document.getElementById('face-modal-title').textContent = '🔴 สแกนใบหน้าออกงาน';
       document.getElementById('face-modal-sub').textContent = 'จ่อหน้าตรงกล้อง ห่าง 30-50 ซม.';
@@ -10629,17 +10646,31 @@
         setTimeout(() => {
           stopFaceCam();
           if (isEmpSelf) {
-            if (window._faceRegReturnToCheckin) {
+            const goBackToCheckinPage = () => {
+              document.getElementById('face-modal')?.classList.remove('active');
+              const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
+              const btn = isMob
+                ? document.querySelector('[data-mob-tab=checkin-page]')
+                : document.querySelector('[data-tab=checkin-page]');
+              if (btn) goTab('checkin-page', btn);
+              else renderPage('checkin-page');
+            };
+
+            if (window._faceRegReturnToCheckout) {
+              // ลงทะเบียนเสร็จแล้ว → กลับไปหน้าสแกนออกงานอัตโนมัติ
+              window._faceRegReturnToCheckout = false;
+              setFaceStatus('info', '✅ ลงทะเบียนเสร็จแล้ว กำลังกลับไปสแกนออกงาน...');
+              setTimeout(() => {
+                goBackToCheckinPage();
+                setTimeout(() => { window.openFaceScanCheckout?.().catch(() => { }); }, 350);
+              }, 1200);
+            } else if (window._faceRegReturnToCheckin) {
               // ลงทะเบียนเสร็จแล้ว → กลับไปหน้าสแกนเข้างานอัตโนมัติ
               window._faceRegReturnToCheckin = false;
               setFaceStatus('info', '✅ ลงทะเบียนเสร็จแล้ว กำลังกลับไปสแกนเข้างาน...');
               setTimeout(() => {
-                document.getElementById('face-modal')?.classList.remove('active');
-                const isMob = document.getElementById('app-screen').classList.contains('mobile-mode');
-                const btn = isMob
-                  ? document.querySelector('[data-mob-tab=checkin-page]')
-                  : document.querySelector('[data-tab=checkin-page]');
-                if (btn) goTab('checkin-page', btn);
+                goBackToCheckinPage();
+                setTimeout(() => { window.openFaceScan?.().catch(() => { }); }, 350);
               }, 1200);
             } else {
               pgEmpFaceReg();
@@ -10798,9 +10829,26 @@
       setFaceStatus('info', '🔍 กำลังค้นหาใบหน้าในระบบ...');
       const matched = _matchFace(descriptor);
       if (!matched) {
-        setFaceRing('red');
-        setFaceStatus('error', '❌ ไม่พบใบหน้าในระบบ');
-        setTimeout(() => { faceDetecting = true; faceRafHandle = requestAnimationFrame(_faceDetectLoop); }, 3000);
+        // ถ้าของตัวเอง "ไม่มีใบหน้าลงทะเบียน" → พาไปลงทะเบียนอัตโนมัติ แล้วกลับมาสแกนออกงาน
+        const selfEmp = db.employees.find(e => e._key === CU.id);
+        const hasSelfFace = selfEmp && (
+          (Array.isArray(selfEmp.faceDescriptors) && selfEmp.faceDescriptors.some(d => Array.isArray(d) && d.length === 128)) ||
+          (Array.isArray(selfEmp.faceDescriptor) && selfEmp.faceDescriptor.length === 128)
+        );
+        if (!hasSelfFace) {
+          setFaceRing('red');
+          setFaceStatus('error', '📷 ยังไม่ได้ลงทะเบียนใบหน้า<br><span style="font-size:11px;">กำลังพาไปลงทะเบียน...</span>');
+          setTimeout(() => {
+            stopFaceCam();
+            window._faceRegReturnToCheckin = false;
+            window._faceRegReturnToCheckout = true;
+            pgEmpFaceReg();
+          }, 1800);
+        } else {
+          setFaceRing('red');
+          setFaceStatus('error', '❌ ไม่พบใบหน้าในระบบ');
+          setTimeout(() => { faceDetecting = true; faceRafHandle = requestAnimationFrame(_faceDetectLoop); }, 3000);
+        }
         return;
       }
 
@@ -13721,6 +13769,19 @@ async function handle(req) {
         };
         const s = styles[cellType] || styles.empty;
 
+        // ── สถานที่เข้างาน ──
+        let locLabel = '';
+        if (rec) {
+          locLabel = rec.locationName || '';
+          if (!locLabel && rec.locationId) {
+            const _loc = gpsLocations.find(l => l.id === rec.locationId);
+            locLabel = _loc?.name || '';
+          }
+        }
+
+        // ── ประเภทการเข้างาน ──
+        const method = rec?.checkInMethod || rec?.checkinMethod || '';
+
         // Sub-label (เวลาเข้า / ออก)
         let subLabel = '', subLabel2 = '';
         if (rec) {
@@ -13750,6 +13811,10 @@ async function handle(req) {
           leaveDeduct: lv?.totalDeduct || 0,
           isLate, isEarly, shiftIn, shiftOut,
           holidayName: specialHolMap[dk] || '',
+          locationName: locLabel,
+          checkInMethod: method,
+          distMeters: rec?.distMeters || 0,
+          otHours: rec?.otHours || 0,
         }).replace(/"/g, '&quot;');
 
         cells += `
@@ -13757,8 +13822,10 @@ async function handle(req) {
       <div style="background:${s.bg};border:1.5px solid ${s.border};border-radius:10px;padding:5px 4px 4px;min-height:68px;position:relative;${todayRing}transition:transform .12s;" onmousedown="this.style.transform='scale(.93)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.93)'" ontouchend="this.style.transform=''">
         <!-- Day number -->
         <div style="font-size:13px;font-weight:700;color:${s.dayCol};text-align:center;line-height:1.2;">${d}</div>
+        <!-- Location name -->
+        ${rec && locLabel ? `<div style="font-size:7px;color:#6366f1;text-align:center;margin-top:1px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📍${locLabel.length > 5 ? locLabel.slice(0, 5) + '…' : locLabel}</div>` : ''}
         <!-- Check-in time -->
-        ${subLabel ? `<div style="font-size:8px;color:${isLate ? '#f97316' : '#16a34a'};text-align:center;margin-top:2px;font-weight:700;white-space:nowrap;overflow:hidden;">▲${subLabel}</div>` : ''}
+        ${subLabel ? `<div style="font-size:8px;color:${isLate ? '#f97316' : '#16a34a'};text-align:center;margin-top:1px;font-weight:700;white-space:nowrap;overflow:hidden;">▲${subLabel}</div>` : ''}
         <!-- Check-out time -->
         ${subLabel2 ? `<div style="font-size:8px;color:${isEarly ? '#dc2626' : '#475569'};text-align:center;margin-top:1px;font-weight:700;white-space:nowrap;overflow:hidden;">▼${subLabel2}</div>` : (!subLabel && (lv || isHoliday) ? `<div style="font-size:8px;color:${s.textCol};text-align:center;margin-top:2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${subLabel || ''}</div>` : '')}
         <!-- OT badge -->
@@ -13871,21 +13938,61 @@ async function handle(req) {
 
       const deductPts = (d.isLate ? 2 : 0) + (d.isEarly ? 2 : 0) + (d.leaveDeduct || 0);
 
+      // ── ประเภทการเข้างาน (method) icon + label ──
+      const _methodMap = { face: { icon: 'fa-smile', label: 'สแกนใบหน้า', color: '#7c3aed' }, scanner: { icon: 'fa-fingerprint', label: 'สแกนนิ้ว', color: '#0891b2' }, gps_button: { icon: 'fa-map-marker-alt', label: 'GPS ปุ่มกด', color: '#16a34a' }, admin: { icon: 'fa-user-shield', label: 'แอดมินบันทึก', color: '#64748b' } };
+      const _m = _methodMap[d.checkInMethod] || { icon: 'fa-qrcode', label: d.checkInMethod ? d.checkInMethod : 'QR Code', color: '#f59e0b' };
+
       // Time info
       let timeHtml = '';
       if (d.checkInTime || d.checkOutTime) {
-        timeHtml = `<div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
-      <div style="width:40px;height:40px;background:#f0f4f8;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <i class="fas fa-clock" style="color:#64748b;font-size:16px;"></i>
+        timeHtml = `
+    <!-- เวลาเข้า-ออก -->
+    <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
+      <div style="width:40px;height:40px;background:#f0fdf4;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i class="fas fa-clock" style="color:#16a34a;font-size:16px;"></i>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:6px;">เวลาทำงาน</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:10px;color:#94a3b8;">เข้างาน</div>
+            <div style="font-size:20px;font-weight:800;color:${d.isLate ? '#f97316' : '#16a34a'};">${d.checkInTime || '-'} <span style="font-size:12px;font-weight:600;">น.</span></div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#94a3b8;">ออกงาน</div>
+            <div style="font-size:20px;font-weight:800;color:${d.checkOutTime ? (d.isEarly ? '#dc2626' : '#374151') : '#cbd5e1'};">${d.checkOutTime || '-'} ${d.checkOutTime ? '<span style="font-size:12px;font-weight:600;">น.</span>' : ''}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#94a3b8;">กะงาน</div>
+            <div style="font-size:13px;font-weight:700;color:#64748b;margin-top:4px;">${d.shiftIn} - ${d.shiftOut}</div>
+          </div>
+        </div>
+        ${d.isLate ? `<div style="font-size:11px;color:#f97316;margin-top:6px;font-weight:600;background:#fff7ed;padding:4px 10px;border-radius:8px;display:inline-block;"><i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>มาสาย (กำหนด ${d.shiftIn})</div>` : ''}
+        ${d.isEarly ? `<div style="font-size:11px;color:#dc2626;margin-top:4px;font-weight:600;background:#fef2f2;padding:4px 10px;border-radius:8px;display:inline-block;"><i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>ออกก่อนเวลา (กำหนด ${d.shiftOut})</div>` : ''}
+      </div>
+    </div>
+
+    <!-- สถานที่ทำงาน -->
+    ${d.locationName ? `
+    <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
+      <div style="width:40px;height:40px;background:#eef2ff;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i class="fas fa-map-marker-alt" style="color:#6366f1;font-size:16px;"></i>
       </div>
       <div>
-        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">เวลาที่บันทึก</div>
-        <div style="font-size:18px;font-weight:800;color:#1e293b;">
-          เข้า: <span style="color:${d.isLate ? '#f97316' : '#16a34a'}">${d.checkInTime || '-'} น.</span>
-          ${d.checkOutTime ? `&nbsp;|&nbsp; ออก: <span style="color:${d.isEarly ? '#dc2626' : '#374151'}">${d.checkOutTime} น.</span>` : ''}
-        </div>
-        ${d.isLate ? `<div style="font-size:11px;color:#f97316;margin-top:3px;font-weight:600;"><i class="fas fa-exclamation-circle mr-1"></i>มาสาย (กะ ${d.shiftIn})</div>` : ''}
-        ${d.isEarly ? `<div style="font-size:11px;color:#dc2626;margin-top:3px;font-weight:600;"><i class="fas fa-exclamation-circle mr-1"></i>ออกก่อนเวลา (กะ ${d.shiftOut})</div>` : ''}
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">สถานที่เข้างาน</div>
+        <div style="font-size:16px;font-weight:800;color:#1e293b;">${d.locationName}</div>
+        ${d.distMeters ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">ระยะห่าง ${d.distMeters} ม.</div>` : ''}
+      </div>
+    </div>` : ''}
+
+    <!-- ประเภทการเข้างาน -->
+    <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
+      <div style="width:40px;height:40px;background:${_m.color}15;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i class="fas ${_m.icon}" style="color:${_m.color};font-size:16px;"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">ประเภทการเข้างาน</div>
+        <div style="font-size:16px;font-weight:800;color:${_m.color};">${_m.label}</div>
       </div>
     </div>`;
       } else if (d.leaveType) {
@@ -13901,15 +14008,15 @@ async function handle(req) {
       }
 
       // OT info
-      const otHtml = `<div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
+      const otHtml = (d.checkInTime && (d.otPay > 0 || d.otHours > 0)) ? `<div style="display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
     <div style="width:40px;height:40px;background:#eff6ff;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
       <i class="fas fa-bolt" style="color:#3b82f6;font-size:16px;"></i>
     </div>
     <div>
       <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">ล่วงเวลา (OT)</div>
-      <div style="font-size:18px;font-weight:800;color:#1e293b;">${d.otPay > 0 ? '฿' + Number(d.otPay).toLocaleString() : 'ไม่มี'}</div>
+      <div style="font-size:18px;font-weight:800;color:#1e293b;">${d.otHours > 0 ? d.otHours + ' ชม. · ' : ''}฿${Number(d.otPay).toLocaleString()}</div>
     </div>
-  </div>`;
+  </div>` : '';
 
       // Reason
       const reasonHtml = d.leaveReason ? `<div style="background:#f8fafc;border-radius:12px;padding:12px 14px;margin-top:4px;">
@@ -13928,6 +14035,7 @@ async function handle(req) {
     <button onclick="closeModal()" style="float:right;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.25);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
     <div style="font-size:12px;color:rgba(255,255,255,.8);font-weight:600;margin-bottom:4px;">${dayName}</div>
     <div style="font-size:26px;font-weight:900;color:#fff;">${title}</div>
+    ${d.locationName ? `<div style="font-size:12px;color:rgba(255,255,255,.85);margin-top:4px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;"></i>${d.locationName}</div>` : ''}
   </div>
   <div style="padding:0 20px 20px;">
     ${timeHtml}
