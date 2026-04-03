@@ -7197,7 +7197,7 @@
         && (Date.now() - _checkinModePrefetch.ts < CHECKIN_PREFETCH_TTL_MS);
       const inFlight = _checkinModeResolveInFlight && _checkinModeResolveInFlightKey === empObj._key;
       if (!hasFreshCache || inFlight) {
-        wrap.innerHTML = `<div style="text-align:center;padding:40px 16px;color:#64748b;font-size:13px;"><i class="fas fa-spinner fa-spin" style="font-size:22px;margin-bottom:10px;display:block;"></i>กำลังตรวจสอบตำแหน่ง GPS เพื่อเลือกวิธีเช็คชื่อ...</div>`;
+        wrap.innerHTML = `<div style="text-align:center;padding:40px 16px;color:#64748b;font-size:13px;"><i class="fas fa-spinner fa-spin" style="font-size:22px;margin-bottom:10px;display:block;"></i>กำลังตรวจสอบตำแหน่ง gps...</div>`;
       }
       const ctx = await resolveAreaBasedCheckinMode(empObj);
       const em = ctx.mode;
