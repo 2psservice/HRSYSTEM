@@ -1965,6 +1965,9 @@
 
             hideLoader();
             startApp();
+            if (CU.role === 'employee') {
+              setTimeout(() => { prefetchEmployeeCheckinModeAfterLogin().catch(() => { }); }, 50);
+            }
             setTimeout(() => lsToast('ล็อกอินผ่าน LINE อัตโนมัติ', '#059669'), 500);
 
             if (CU.role === 'admin') setTimeout(healEmployeeSupIds, 1500);
@@ -2110,6 +2113,9 @@
             faceMatcherDirty = true;
             await loadAttendanceDate(todayStr);
             startApp();
+            if (CU.role === 'employee') {
+              setTimeout(() => { prefetchEmployeeCheckinModeAfterLogin().catch(() => { }); }, 50);
+            }
 
             // 🟢 Auto Binding LINE Account 🟢
             if (pendingLineUid && (CU.role === 'employee' || CU.role === 'supervisor')) {
@@ -2141,6 +2147,9 @@
 
     function doLogout() {
       CU = null;
+      _checkinModePrefetch = null;
+      _checkinModeResolveInFlight = null;
+      _checkinModeResolveInFlightKey = null;
       if (qrTimer) clearInterval(qrTimer);
       unsubscribeTodayListener();
       stopLiveGpsTracking();
@@ -7184,7 +7193,12 @@
 
     // ---- หน้าพร้อมสแกน (ยังไม่ได้เช็ค) — โหมดตามพื้นที่จาก GPS ----
     async function _renderCheckinReady(wrap, empObj) {
-      wrap.innerHTML = `<div style="text-align:center;padding:40px 16px;color:#64748b;font-size:13px;"><i class="fas fa-spinner fa-spin" style="font-size:22px;margin-bottom:10px;display:block;"></i>กำลังตรวจสอบตำแหน่ง GPS เพื่อเลือกวิธีเช็คชื่อ...</div>`;
+      const hasFreshCache = _checkinModePrefetch && _checkinModePrefetch.empKey === empObj._key
+        && (Date.now() - _checkinModePrefetch.ts < CHECKIN_PREFETCH_TTL_MS);
+      const inFlight = _checkinModeResolveInFlight && _checkinModeResolveInFlightKey === empObj._key;
+      if (!hasFreshCache || inFlight) {
+        wrap.innerHTML = `<div style="text-align:center;padding:40px 16px;color:#64748b;font-size:13px;"><i class="fas fa-spinner fa-spin" style="font-size:22px;margin-bottom:10px;display:block;"></i>กำลังตรวจสอบตำแหน่ง GPS เพื่อเลือกวิธีเช็คชื่อ...</div>`;
+      }
       const ctx = await resolveAreaBasedCheckinMode(empObj);
       const em = ctx.mode;
 
@@ -11127,8 +11141,13 @@
       };
     }
 
-    /** ก่อนเข้างาน: อ่าน GPS แล้วเลือกโหมดตามพื้นที่ (หรือพื้นที่ใกล้สุดเมื่ออยู่นอกรัศมี) */
-    async function resolveAreaBasedCheckinMode(empObj) {
+    let _checkinModePrefetch = null; // { ts, empKey, ctx }
+    let _checkinModeResolveInFlight = null;
+    let _checkinModeResolveInFlightKey = null;
+    const CHECKIN_PREFETCH_TTL_MS = 3 * 60 * 1000;
+
+    /** งานจริง: อ่าน GPS แล้วเลือกโหมดตามพื้นที่ */
+    async function _resolveAreaBasedCheckinModeCore(empObj) {
       const uniform = uniformAreaCheckinModeIfAny();
       const fallbackMode = uniform != null ? uniform : checkinMode;
 
@@ -11193,6 +11212,56 @@
         gpsUnavailable: false,
         banner
       };
+    }
+
+    /**
+     * แคชผลลัพธ์ ~3 นาที + รอ Promise เดียวกันถ้ายังวัด GPS ไม่จบ (ล็อกอิน prefetch กับหน้าเช็คชื่อไม่ซ้ำ)
+     * opts.bypassCache = true → บังคับวัดใหม่ (ใช้หลังล็อกอิน)
+     */
+    async function resolveAreaBasedCheckinMode(empObj, opts = {}) {
+      const bypassCache = opts.bypassCache === true;
+      if (!empObj || !empObj._key) {
+        const uniform = uniformAreaCheckinModeIfAny();
+        const fb = uniform != null ? uniform : checkinMode;
+        return { mode: fb, locationId: null, areaName: '', outside: false, gpsUnavailable: false, banner: '' };
+      }
+
+      if (_checkinModeResolveInFlight && _checkinModeResolveInFlightKey === empObj._key) {
+        return await _checkinModeResolveInFlight;
+      }
+
+      const now = Date.now();
+      if (!bypassCache && _checkinModePrefetch && _checkinModePrefetch.empKey === empObj._key) {
+        if (now - _checkinModePrefetch.ts < CHECKIN_PREFETCH_TTL_MS) {
+          return _checkinModePrefetch.ctx;
+        }
+      }
+
+      const p = _resolveAreaBasedCheckinModeCore(empObj).then(ctx => {
+        _checkinModePrefetch = { ts: Date.now(), empKey: empObj._key, ctx };
+        return ctx;
+      }).finally(() => {
+        if (_checkinModeResolveInFlight === p) {
+          _checkinModeResolveInFlight = null;
+          _checkinModeResolveInFlightKey = null;
+        }
+      });
+
+      _checkinModeResolveInFlight = p;
+      _checkinModeResolveInFlightKey = empObj._key;
+      return await p;
+    }
+
+    /** เรียกหลังล็อกอินพนักงาน — วัด GPS + โหมดเช็คชื่อล่วงหน้า หน้าเช็คชื่อจะเปิดเร็ว */
+    async function prefetchEmployeeCheckinModeAfterLogin() {
+      if (CU.role !== 'employee') return;
+      try {
+        const amFresh = await fbGet('/settings/areaCheckinMethods').catch(() => null);
+        if (amFresh && typeof amFresh === 'object') areaCheckinMethods = amFresh;
+      } catch (_) { }
+      const emp = getCurrentUserAsEmpObj();
+      if (!emp || !gpsLocations.length) return;
+      await resolveAreaBasedCheckinMode(emp, { bypassCache: true });
     }
 
     // Show a prominent block UI inside face modal when GPS fails
