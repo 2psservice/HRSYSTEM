@@ -1899,20 +1899,25 @@
       return cfg.jobRate || db.wage.defaultWage;
     }
 
-    function getEffectiveCheckinMode(empObj) {
-      // ถ้ามีการตั้งค่าวิธีเช็คชื่อรายพื้นที่ → ใช้ค่าแรกที่ตั้งไว้
-      // (เพราะไม่รู้พนักงานอยู่พื้นที่ไหนก่อนเช็ค GPS จริง — ใช้ค่าพื้นที่แรกเป็น default)
-      // Admin สามารถตั้งค่า Global fallback ได้ที่หน้า Area Methods
-      // หากทุกพื้นที่ตั้งค่าเหมือนกัน (เช่น gps_button) จะใช้ค่านั้น
+    function getCheckinModeForLocationId(locId) {
+      if (!locId) return checkinMode;
+      const m = areaCheckinMethods[locId];
+      return m != null ? m : checkinMode;
+    }
+
+    /** ถ้าทุกพื้นที่ตั้งค่าเหมือนกันคืนค่านั้น — ถ้าต่างกันคืน null */
+    function uniformAreaCheckinModeIfAny() {
       const vals = Object.values(areaCheckinMethods);
-      if (vals.length > 0) {
-        // ถ้าทุก zone ตั้งค่าเหมือนกัน → ใช้ค่านั้น
-        const unique = [...new Set(vals)];
-        if (unique.length === 1) return unique[0];
-        // ถ้า zone แรกที่ตั้งค่า gps_button ให้ priority
-        if (vals.some(v => v === 'gps_button')) return 'gps_button';
-        return vals[0];
-      }
+      if (!vals.length) return null;
+      const u = [...new Set(vals)];
+      return u.length === 1 ? u[0] : null;
+    }
+
+    /** ไม่มี locationId = ใช้ค่าทั่วทั้งบริษัท (checkinMode) หรือค่าเดียวกันทุกโซน — ไม่บังคับ gps_button เมื่อมีหลายโหมด */
+    function getEffectiveCheckinMode(empObj, locationId) {
+      if (locationId) return getCheckinModeForLocationId(locationId);
+      const uniform = uniformAreaCheckinModeIfAny();
+      if (uniform) return uniform;
       return checkinMode;
     }
 
@@ -2345,10 +2350,18 @@
           { tab: 'chg-pwd', icon: 'fas fa-key', label: 'เปลี่ยนรหัสผ่าน' },
         ];
       }
-      // Employee menu — 3 tabs only
-      const effMode = getEffectiveCheckinMode({});
-      const empCiIcon = effMode === 'gps_button' ? 'fas fa-map-marker-alt' : effMode === 'face' ? 'fas fa-smile' : effMode === 'both' ? 'fas fa-id-badge' : 'fas fa-map-marker-alt';
-      const empCiLabel = effMode === 'gps_button' ? 'ลงเวลาเข้างาน' : effMode === 'face' ? 'สแกนใบหน้า' : effMode === 'both' ? 'เช็คชื่อเข้างาน' : 'ลงชื่อเข้างาน';
+      // Employee menu — 3 tabs only (หลายพื้นที่คนละโหมด → ป้ายทั่วไป)
+      const uniform = uniformAreaCheckinModeIfAny();
+      const multiZone = Object.keys(areaCheckinMethods).length > 0 && !uniform;
+      let empCiIcon, empCiLabel;
+      if (multiZone) {
+        empCiIcon = 'fas fa-map-marked-alt';
+        empCiLabel = 'เช็คชื่อเข้างาน';
+      } else {
+        const effMode = uniform != null ? uniform : checkinMode;
+        empCiIcon = effMode === 'gps_button' ? 'fas fa-map-marker-alt' : effMode === 'face' ? 'fas fa-smile' : effMode === 'both' ? 'fas fa-id-badge' : 'fas fa-map-marker-alt';
+        empCiLabel = effMode === 'gps_button' ? 'ลงเวลาเข้างาน' : effMode === 'face' ? 'สแกนใบหน้า' : effMode === 'both' ? 'เช็คชื่อเข้างาน' : 'ลงชื่อเข้างาน';
+      }
       return [
         { tab: 'emp-home', icon: 'fas fa-home', label: 'หน้าหลัก' },
         { tab: 'checkin-page', icon: empCiIcon, label: empCiLabel, c: 'text-green-400' },
@@ -7102,7 +7115,7 @@
     // =====================================================================
     //  CHECK-IN PAGE  (Employee view — scan-only, auto submit, show history)
     // =====================================================================
-    function pgCheckin() {
+    async function pgCheckin() {
       const mc = document.getElementById('main-content');
       // Non-employee role (admin/supervisor simulating) — keep old full UI
       if (CU.role !== 'employee') {
@@ -7110,7 +7123,7 @@
       }
       // Employee role — clean scan-only UI
       mc.innerHTML = `<div id="ci-page" class="max-w-sm mx-auto mt-2"></div>`;
-      _renderEmpCheckinView();
+      await _renderEmpCheckinView();
     }
 
 
@@ -7153,6 +7166,9 @@
       const empObj = getCurrentUserAsEmpObj();
       if (!empObj) { wrap.innerHTML = '<p class="text-gray-400 text-center py-10">ไม่พบข้อมูลผู้ใช้</p>'; return; }
 
+      const amFresh = await fbGet('/settings/areaCheckinMethods').catch(() => null);
+      if (amFresh && typeof amFresh === 'object') areaCheckinMethods = amFresh;
+
       // โหลด attendance วันนี้
       await loadAttendanceDate(todayStr);
       const alr = getAttendanceArray(todayStr).find(r => r.empId === empObj._key);
@@ -7161,13 +7177,17 @@
         // เช็คชื่อแล้ว — แสดงผลสำเร็จ + ประวัติล่าสุด
         _renderCheckinDone(wrap, empObj, alr);
       } else {
-        // ยังไม่ได้เช็ค — แสดงปุ่มเปิดกล้อง
-        _renderCheckinReady(wrap, empObj);
+        // ยังไม่ได้เช็ค — แสดงปุ่มเปิดกล้อง (โหมดตาม GPS)
+        await _renderCheckinReady(wrap, empObj);
       }
     }
 
-    // ---- หน้าพร้อมสแกน (ยังไม่ได้เช็ค) ----
-    function _renderCheckinReady(wrap, empObj) {
+    // ---- หน้าพร้อมสแกน (ยังไม่ได้เช็ค) — โหมดตามพื้นที่จาก GPS ----
+    async function _renderCheckinReady(wrap, empObj) {
+      wrap.innerHTML = `<div style="text-align:center;padding:40px 16px;color:#64748b;font-size:13px;"><i class="fas fa-spinner fa-spin" style="font-size:22px;margin-bottom:10px;display:block;"></i>กำลังตรวจสอบตำแหน่ง GPS เพื่อเลือกวิธีเช็คชื่อ...</div>`;
+      const ctx = await resolveAreaBasedCheckinMode(empObj);
+      const em = ctx.mode;
+
       const now = new Date();
       const dateLabel = now.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       wrap.innerHTML = `
@@ -7183,9 +7203,9 @@
         <span><i class="fas fa-user-tie" style="margin-right:3px;opacity:.7;"></i>${empObj.sup || '-'}</span>
       </div>
     </div>
+    ${ctx.banner || ''}
     <!-- ปุ่มเช็คชื่อ — รองรับทุกโหมด รวม gps_button -->
     ${(() => {
-          const em = getEffectiveCheckinMode(empObj);
           const isGps = em === 'gps_button';
           if (isGps) return `
         <div id="gps-device-info" style="background:#fff3cd;border:1px solid #ffc107;border-radius:14px;padding:12px 16px;margin-bottom:12px;font-size:12px;color:#856404;display:flex;align-items:center;gap:8px;">
@@ -7234,9 +7254,9 @@
       // โหลดประวัติ
       _loadRecentHistory(empObj);
       // Device Binding: ตรวจสอบทุกโหมด
-      _checkDeviceBindingUI(empObj);
+      _checkDeviceBindingUI(empObj, em);
       // ถ้าเป็น gps_button ให้ตรวจสอบ device binding (enable/disable button)
-      if (getEffectiveCheckinMode(empObj) === 'gps_button') _checkAndEnableGpsBtn(empObj);
+      if (em === 'gps_button') _checkAndEnableGpsBtn(empObj);
     }
 
     // ---- โหลดประวัติเข้างาน (เดือนปัจจุบัน) ----
@@ -7380,7 +7400,7 @@
       ${alr.checkOutTime
           ? `<div style="padding:12px 18px 18px;"><div style="background:#fef2f2;border-radius:10px;padding:10px 14px;text-align:center;font-size:13px;font-weight:700;color:#dc2626;"><i class="fas fa-sign-out-alt" style="margin-right:6px;"></i>ออกงานแล้ว ${alr.checkOutTime} น.</div></div>`
           : `<div style="padding:10px 18px 18px;">
-            ${_buildCheckoutButtons(empObj)}
+            ${_buildCheckoutButtons(empObj, alr.locationId)}
             <div id="ci-status" style="display:none;margin-top:10px;padding:12px;border-radius:12px;font-size:13px;font-weight:600;text-align:center;"></div>
           </div>`}
     </div>
@@ -7392,7 +7412,7 @@
     </div>`;
       _loadRecentHistory(empObj);
       // GPS button mode: enable checkout button after render
-      if (getEffectiveCheckinMode(empObj) === 'gps_button' && !alr.checkOutTime) {
+      if (getCheckinModeForLocationId(alr.locationId) === 'gps_button' && !alr.checkOutTime) {
         setTimeout(() => _checkAndEnableGpsBtnCo(empObj), 80);
       }
     }
@@ -8807,8 +8827,6 @@
         }
       }
 
-      // Checkin mode
-      const em = getEffectiveCheckinMode(e);
       const goCheckin = `(function(){const isMob=document.getElementById('app-screen').classList.contains('mobile-mode');const btn=isMob?document.querySelector('[data-mob-tab=checkin-page]'):document.querySelector('[data-tab=checkin-page]');if(btn)goTab('checkin-page',btn);})()`;
       const goHist = `(function(){const isMob=document.getElementById('app-screen').classList.contains('mobile-mode');const btn=isMob?document.querySelector('[data-mob-tab=emp-hist]'):document.querySelector('[data-tab=emp-hist]');if(btn)goTab('emp-hist',btn);})()`;
 
@@ -11109,6 +11127,74 @@
       };
     }
 
+    /** ก่อนเข้างาน: อ่าน GPS แล้วเลือกโหมดตามพื้นที่ (หรือพื้นที่ใกล้สุดเมื่ออยู่นอกรัศมี) */
+    async function resolveAreaBasedCheckinMode(empObj) {
+      const uniform = uniformAreaCheckinModeIfAny();
+      const fallbackMode = uniform != null ? uniform : checkinMode;
+
+      if (!gpsLocations.length) {
+        return {
+          mode: fallbackMode,
+          locationId: null,
+          areaName: '',
+          outside: false,
+          gpsUnavailable: false,
+          banner: ''
+        };
+      }
+
+      const gpsResult = await _getGpsResult();
+      if (!gpsResult.available) {
+        return {
+          mode: fallbackMode,
+          locationId: null,
+          areaName: '',
+          outside: false,
+          gpsUnavailable: true,
+          banner: '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e;">' +
+            '<i class="fas fa-satellite-dish" style="margin-right:6px;"></i>เปิด <b>GPS</b> และอนุญาตตำแหน่ง เพื่อให้ระบบเลือกวิธีเช็คชื่อตามพื้นที่ที่คุณอยู่</div>'
+        };
+      }
+
+      let matched = [...(gpsResult.matchedAreas || [])].sort((a, b) => (a.dist || 0) - (b.dist || 0));
+      let chosen = matched[0] || null;
+      if (!chosen && gpsResult.rawLat != null && gpsResult.rawLng != null) {
+        chosen = gpsLocations.reduce((b, l) =>
+          distM(l.lat, l.lng, gpsResult.rawLat, gpsResult.rawLng) < distM(b.lat, b.lng, gpsResult.rawLat, gpsResult.rawLng) ? l : b, gpsLocations[0]);
+      }
+      if (!chosen) {
+        return {
+          mode: fallbackMode,
+          locationId: null,
+          areaName: '',
+          outside: true,
+          gpsUnavailable: false,
+          banner: '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#64748b;">ไม่พบพื้นที่ในระบบ — ใช้โหมดเริ่มต้น</div>'
+        };
+      }
+
+      const mode = getCheckinModeForLocationId(chosen.id);
+      const outside = matched.length === 0 || !gpsResult.ok;
+
+      let banner = '';
+      if (outside) {
+        banner = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#991b1b;">' +
+          '<i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>คุณอยู่นอกรัศมีพื้นที่ — แสดงวิธีเช็คชื่อตามพื้นที่ใกล้สุด <b>' + (chosen.name || '') + '</b> (ห่าง ' + Math.round(gpsResult.dist) + ' ม.) — เมื่อเช็คชื่อระบบจะตรวจสอบ GPS อีกครั้ง</div>';
+      } else {
+        banner = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;">' +
+          '<i class="fas fa-map-marker-alt" style="margin-right:6px;"></i>พื้นที่: <b>' + (chosen.name || '') + '</b> — วิธีเช็คชื่อตามพื้นที่นี้</div>';
+      }
+
+      return {
+        mode,
+        locationId: chosen.id,
+        areaName: chosen.name || '',
+        outside,
+        gpsUnavailable: false,
+        banner
+      };
+    }
+
     // Show a prominent block UI inside face modal when GPS fails
     function _showGpsBlockUI(empName, gpsResult, action) {
       const nearestLoc = gpsLocations.length
@@ -12200,8 +12286,8 @@
     }
 
 
-    function _buildCheckoutButtons(empObj) {
-      const em = getEffectiveCheckinMode(empObj);
+    function _buildCheckoutButtons(empObj, checkinLocationId) {
+      const em = checkinLocationId ? getCheckinModeForLocationId(checkinLocationId) : getEffectiveCheckinMode(empObj);
       const mb10 = 'margin-bottom:10px;';
       const btnBase = 'border:none;border-radius:14px;padding:16px 20px;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Sarabun,sans-serif;transition:all .2s;width:100%;color:#fff;';
       const mouseEvts = 'onmousedown="this.style.opacity=\'.85\'" onmouseup="this.style.opacity=\'1\'" ontouchstart="this.style.opacity=\'.85\'" ontouchend="this.style.opacity=\'1\'"';
@@ -12244,9 +12330,9 @@
 
     // GPS Button Check-IN
     // Show device binding status banner on checkin page (for QR + Face modes)
-    async function _checkDeviceBindingUI(empObj) {
+    async function _checkDeviceBindingUI(empObj, modeOverride) {
       if (CU.role !== 'employee') return;
-      const em = getEffectiveCheckinMode(empObj);
+      const em = modeOverride != null ? modeOverride : getEffectiveCheckinMode(empObj);
       if (em === 'gps_button') return; // gps_button has its own banner
       const did = getDeviceId();
       const b = deviceBindings[empObj._key];
@@ -12562,6 +12648,10 @@
       const label = { qr: 'QR Code', face: 'สแกนใบหน้า', both: 'QR + ใบหน้า', gps_button: 'กดปุ่ม + GPS' };
       const btn = event?.target || document.activeElement;
       if (btn) { const orig = btn.innerHTML; btn.innerHTML = '<i class="fas fa-check"></i> บันทึกแล้ว!'; btn.style.background = '#16a34a'; setTimeout(() => { btn.innerHTML = orig; btn.style.background = '#f59e0b'; }, 1800); }
+      if (CU.role === 'employee') {
+        buildSidebar();
+        if (window._currentTab === 'checkin-page') _renderEmpCheckinView();
+      }
     };
 
     // =====================================================================
@@ -12628,23 +12718,12 @@
       } catch (e) { console.warn('[LINE scheduler]', e.message); }
     }
 
-    // ── สรุปเข้างาน (เดิม _checkForgotAttendance) ────────────────────────
-    async function _checkCheckinSummary(cfg, nowMin, todayKey, now) {
-      const summaryTime = cfg.checkInAlertTime || '10:30';
-      const [sh, sm] = summaryTime.split(':').map(Number);
-      const summaryMin = sh * 60 + sm;
-      const flagKey = 'lnCheckinSummary_' + todayKey;
-
-      // ส่งได้ภายใน 15 นาทีหลังเวลาที่ตั้ง (กว้างขึ้นจากเดิม 10 นาที)
-      if (nowMin < summaryMin || nowMin > summaryMin + 14) return;
-      if (localStorage.getItem(flagKey)) return; // ใช้ localStorage แทน sessionStorage
-      localStorage.setItem(flagKey, '1');
-
-      await loadAttendanceDate(todayKey);
-      const recs = Object.values(db.attendance[todayKey] || {}).filter(r => r.checkInTime);
+    /** สร้างข้อความสรุปการเข้างานแบบเดียวกับที่ส่ง LINE อัตโนมัติ (ใช้คัดลอกไปวางในไลน์เองได้) */
+    async function buildCheckinSummaryLineText(dateKey) {
+      await loadAttendanceDate(dateKey);
+      const recs = Object.values(db.attendance[dateKey] || {}).filter(r => r.checkInTime);
       const checkedInEmpIds = new Set(recs.map(r => r.empId));
 
-      // ── จำนวนมาทำงาน + แยกตามสถานที่ ──────────────────────────────
       const totalCome = recs.length;
       const locMap = {};
       recs.forEach(r => {
@@ -12660,7 +12739,6 @@
         .sort((a, b) => b[1] - a[1])
         .map(([name, cnt]) => `   📍 ${name} ${cnt} คน`);
 
-      // ── มาสาย ────────────────────────────────────────────────────────
       const lateList = [];
       recs.forEach(r => {
         const emp = db.employees.find(e => e._key === r.empId);
@@ -12669,7 +12747,6 @@
         if (li.late) lateList.push(`• ${emp.name} (มาสาย ${li.minutesLate} นาที)`);
       });
 
-      // ── วันลา ──────────────────────────────────────────────────────────
       const leaveList = [];
       const leaveEmpIds = new Set();
       const allLeaves = await fbGet('/leaveRequests').catch(() => null);
@@ -12679,7 +12756,7 @@
             if (lv.status === 'rejected') return;
             const start = lv.startDate || '';
             const end = lv.endDate || lv.startDate || '';
-            if (start <= todayKey && end >= todayKey) {
+            if (start <= dateKey && end >= dateKey) {
               leaveList.push(`• ${lv.empName || '-'} (${lv.type || 'ลา'})`);
               leaveEmpIds.add(empId);
             }
@@ -12687,13 +12764,12 @@
         });
       }
 
-      // ── ขาดงาน ────────────────────────────────────────────────────────
       const absentList = db.employees
         .filter(e => !checkedInEmpIds.has(e._key) && !leaveEmpIds.has(e._key))
         .map(e => `• ${e.name}`);
 
-      // ── รวมเป็น 1 ข้อความ ────────────────────────────────────────────
-      const thDate = now.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      const headerD = new Date(dateKey + 'T12:00:00');
+      const thDate = headerD.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
       const lines = [];
       lines.push(`📊 สรุปการเข้างาน ${thDate}`);
       lines.push(`─────────────────────`);
@@ -12717,8 +12793,24 @@
         lines.push(`\n🎉 ทุกคนมาตรงเวลา ไม่มีการลา ไม่มีขาดงาน`);
       }
 
+      return lines.join('\n');
+    }
+
+    // ── สรุปเข้างาน (เดิม _checkForgotAttendance) ────────────────────────
+    async function _checkCheckinSummary(cfg, nowMin, todayKey, now) {
+      const summaryTime = cfg.checkInAlertTime || '10:30';
+      const [sh, sm] = summaryTime.split(':').map(Number);
+      const summaryMin = sh * 60 + sm;
+      const flagKey = 'lnCheckinSummary_' + todayKey;
+
+      // ส่งได้ภายใน 15 นาทีหลังเวลาที่ตั้ง (กว้างขึ้นจากเดิม 10 นาที)
+      if (nowMin < summaryMin || nowMin > summaryMin + 14) return;
+      if (localStorage.getItem(flagKey)) return; // ใช้ localStorage แทน sessionStorage
+      localStorage.setItem(flagKey, '1');
+
+      const fullText = await buildCheckinSummaryLineText(todayKey);
+
       // LINE API limit 5000 chars — แบ่งส่งหลายข้อความถ้ายาวเกิน
-      const fullText = lines.join('\n');
       if (fullText.length <= 4800) {
         await sendLineMsg(fullText);
       } else {
@@ -16187,6 +16279,10 @@ async function handle(req) {
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-bullhorn mr-2"></i>ประกาศพนักงาน
       </button>
+      <button onclick="lsShowTab('linesum')" id="ls-tab-linesum"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-paste mr-2"></i>สรุปการปฏิบัติของพนักงาน
+      </button>
       <button onclick="lsShowTab('punish')" id="ls-tab-punish"
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-gavel mr-2"></i>ลงโทษพนักงาน
@@ -16491,6 +16587,37 @@ async function handle(req) {
       </div>
     </div>
 
+    <!-- Tab: สรุปการปฏิบัติ (คัดลอกไป LINE) -->
+    <div id="ls-pane-linesum" style="display:none;">
+      <div style="background:linear-gradient(135deg,rgba(0,179,0,.12),rgba(0,195,0,.06));border:1px solid #86efac;border-radius:16px;padding:16px 18px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:#166534;display:flex;align-items:center;gap:8px;">
+          <i class="fab fa-line" style="color:#00b300;"></i> รูปแบบเดียวกับข้อความ LINE อัตโนมัติ
+        </div>
+        <div style="font-size:12px;color:#4b5563;margin-top:6px;line-height:1.65;">
+          ไม่เรียก Messaging API — สร้างข้อความจากข้อมูลเข้างาน / ลา / ขาด / มาสาย แล้วคัดลอกไปวางในกลุ่มไลน์ด้วยตนเอง
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:16px;">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:5px;">วันที่</label>
+            <input type="date" id="lnsum-date" value="${todayStr}" style="padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;cursor:pointer;outline:none;box-sizing:border-box;"
+              onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#e2e8f0'">
+          </div>
+          <button type="button" onclick="lsLineSummaryBuild()" style="padding:9px 20px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+            <i class="fas fa-sync-alt mr-1"></i>สร้างสรุป
+          </button>
+          <button type="button" onclick="lsLineSummaryCopy()" style="padding:9px 20px;background:#0f172a;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;">
+            <i class="fas fa-clipboard mr-1"></i>คัดลอกทั้งหมด
+          </button>
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;">
+        <div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#64748b;">ข้อความ (แก้ไขก่อนส่งได้)</div>
+        <textarea id="lnsum-out" rows="22" placeholder="เลือกวันที่แล้วกด «สร้างสรุป»" style="width:100%;padding:14px 16px;border:none;font-size:13px;font-family:ui-monospace,'Sarabun',monospace;line-height:1.55;box-sizing:border-box;resize:vertical;min-height:320px;outline:none;"></textarea>
+      </div>
+    </div>
+
     <!-- Tab: ลงโทษพนักงาน -->
     <div id="ls-pane-punish" style="display:none;">
       <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:16px;">
@@ -16564,7 +16691,7 @@ async function handle(req) {
     }
 
     window.lsShowTab = function (tab) {
-      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce', 'punish'].forEach(t => {
+      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce', 'linesum', 'punish'].forEach(t => {
         const pane = document.getElementById(`ls-pane-${t}`);
         const btn = document.getElementById(`ls-tab-${t}`);
         if (!pane || !btn) return;
@@ -16578,6 +16705,39 @@ async function handle(req) {
       if (tab === 'history') lsLoadLeaveHistory();
       if (tab === 'punish') lsInitPunish();
       if (tab === 'announce') lsLoadAnnouncements();
+    };
+
+    window.lsLineSummaryBuild = async function () {
+      const dEl = document.getElementById('lnsum-date');
+      const out = document.getElementById('lnsum-out');
+      if (!dEl || !out) return;
+      const dk = dEl.value || todayStr;
+      out.value = 'กำลังสร้างสรุป...';
+      try {
+        out.value = await buildCheckinSummaryLineText(dk);
+        lsToast('สร้างสรุปแล้ว', '#059669');
+      } catch (e) {
+        console.error(e);
+        out.value = 'เกิดข้อผิดพลาด: ' + (e.message || e);
+        lsToast('สร้างสรุปไม่สำเร็จ', '#dc2626');
+      }
+    };
+
+    window.lsLineSummaryCopy = function () {
+      const out = document.getElementById('lnsum-out');
+      if (!out || !out.value.trim() || out.value === 'กำลังสร้างสรุป...') {
+        lsToast('ยังไม่มีข้อความให้คัดลอก — กดสร้างสรุปก่อน', '#ca8a04');
+        return;
+      }
+      navigator.clipboard.writeText(out.value).then(() => lsToast('คัดลอกแล้ว — วางในไลน์ได้เลย', '#059669')).catch(() => {
+        try {
+          out.select();
+          document.execCommand('copy');
+          lsToast('คัดลอกแล้ว', '#059669');
+        } catch (_) {
+          lsToast('คัดลอกไม่ได้ — เลือกข้อความแล้ว Ctrl+C', '#dc2626');
+        }
+      });
     };
 
     // =====================================================================
