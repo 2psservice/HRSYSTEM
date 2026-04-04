@@ -1832,12 +1832,23 @@
     // =====================================================================
     const _toMin = t => { const [h, m] = (String(t || '00:00')).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 
-    // หา workStart/workEnd จาก location → deptSettings → wage global (ลำดับความสำคัญ)
+    // หา workStart/workEnd จาก location → attendance ล่าสุด → deptSettings → wage global (ลำดับความสำคัญ)
     function getWorkTimes(emp, locationId) {
       // 1) จากพื้นที่ที่เช็คชื่อ — ถ้าเจอสถานที่ ใช้เวลาของสถานที่นั้นเสมอ
       if (locationId) {
         const loc = gpsLocations.find(l => l.id === locationId);
-        if (loc) return { workStart: loc.workStart || '08:00', workEnd: loc.workEnd || '17:00' };
+        if (loc && loc.workStart) return { workStart: loc.workStart, workEnd: loc.workEnd || '17:00' };
+      }
+      // 1.5) ไม่มี locationId → หาจาก attendance วันนี้ของพนักงานคนนี้
+      if (!locationId && emp && emp._key) {
+        const todayBucket = db.attendance[todayStr];
+        if (todayBucket) {
+          const myRec = Object.values(todayBucket).find(r => r.empId === emp._key && r.locationId);
+          if (myRec && myRec.locationId) {
+            const loc = gpsLocations.find(l => l.id === myRec.locationId);
+            if (loc && loc.workStart) return { workStart: loc.workStart, workEnd: loc.workEnd || '17:00' };
+          }
+        }
       }
       // 2) จาก deptSettings
       const ds = db.wage.deptSettings || {};
@@ -2465,6 +2476,11 @@
     }
 
     async function renderDashBody(dateKey) {
+      // Refresh gpsLocations ให้ได้เวลาทำงานล่าสุดก่อนคำนวณ
+      try {
+        const gpsData = await fbGet('/settings/gpsLocations');
+        if (gpsData) gpsLocations = Object.entries(gpsData).map(([k, v]) => ({ id: k, ...v }));
+      } catch (_) { }
       await loadAttendanceDate(dateKey);
       const records = getAttendanceArray(dateKey);
       const totalEmp = db.employees.length;
@@ -8057,7 +8073,9 @@
       const sup = db.supervisors.find(s => s._key === CU.id) || {};
       const subs = db.employees.filter(e => empBelongsToSup(e, CU.id));
       const todayLabel = new Date().toLocaleDateString('th-TH', { weekday: 'long' });
-      const shiftIn = '08:00'; const shiftOut = '17:00';
+      // ใช้เวลาจาก global/deptSettings (ไม่ hardcode 08:00)
+      const _supTimes = getWorkTimes({ dept: sup.dept }, null);
+      const shiftIn = _supTimes.workStart; const shiftOut = _supTimes.workEnd;
 
       // คำนวณ progress
       const [ih, im] = shiftIn.split(':').map(Number);
@@ -8209,6 +8227,11 @@
     }
     async function renderSupDashBody(dk) {
       dk = dk || document.getElementById('sup-dash-date')?.value || todayStr;
+      // Refresh gpsLocations ให้ได้เวลาทำงานล่าสุด
+      try {
+        const gpsData = await fbGet('/settings/gpsLocations');
+        if (gpsData) gpsLocations = Object.entries(gpsData).map(([k, v]) => ({ id: k, ...v }));
+      } catch (_) { }
       await loadAttendanceDate(dk);
       const sup = db.supervisors.find(s => s._key === CU.id);
       const recs = getAttendanceArray(dk).filter(r => recBelongsToCurrentSup(r));
@@ -8817,10 +8840,11 @@
       const mOT = monthRecs.reduce((s, r) => s + r.otPay, 0);
       const el = document.getElementById('emp-home-body'); if (!el) return;
 
-      // Shift / schedule info
-      const dept = db.departments && db.departments.find?.(d => d.name === e.dept || d._key === e.dept);
-      const shiftIn = dept?.workStart || '08:00';
-      const shiftOut = dept?.workEnd || '17:00';
+      // Shift / schedule info — ยึดตามสถานที่ที่เช็คอินวันนี้ → สถานที่ล่าสุด → สายงาน → global
+      const _empLocId = tr ? tr.locationId : null;
+      const _empTimes = getWorkTimes(e, _empLocId);
+      const shiftIn = _empTimes.workStart;
+      const shiftOut = _empTimes.workEnd;
       const shiftLabel = e.shiftCode || 'SHIFT101';
       const todayLabel = new Date().toLocaleDateString('th-TH', { weekday: 'long' });
       const isHoliday = (new Date().getDay() === 0 || new Date().getDay() === 6);
@@ -12532,7 +12556,7 @@
       const rec = {
         empId: empObj._key, empName: empObj.name, dept: empObj.dept, sup: empObj.sup, supId: empObj.supId || '',
         checkInTime: ts, otHours: 0, wage, otPay: 0, total: wage, gpsOk: true, distMeters: Math.round(gpsResult.dist),
-        checkinMethod: 'gps_button', deviceId: getDeviceId(), timestamp: Date.now(),
+        checkInMethod: 'gps_button', deviceId: getDeviceId(), timestamp: Date.now(),
         locationId: chosenArea?.id || '', locationName: chosenArea?.name || ''
       };
       showSync();
