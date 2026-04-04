@@ -10725,7 +10725,7 @@
     // ---- Check-in: match and record ----
     async function _handleFaceCheckin(descriptor) {
       faceDetecting = false;
-      setFaceStatus('info', '🔍 กำลังค้นหาใบหน้าในระบบ...');
+      setFaceStatus('info', CU && CU.role === 'employee' ? '🔍 กำลังยืนยันใบหน้า...' : '🔍 กำลังค้นหาใบหน้าในระบบ...');
       const matched = _matchFace(descriptor);
       if (!matched) {
         // ตรวจว่า employee ที่ login อยู่มีใบหน้าลงทะเบียนไว้ไหม
@@ -10858,7 +10858,7 @@
     // ---- Check-out via face ----
     async function _handleFaceCheckout(descriptor) {
       faceDetecting = false;
-      setFaceStatus('info', '🔍 กำลังค้นหาใบหน้าในระบบ...');
+      setFaceStatus('info', CU && CU.role === 'employee' ? '🔍 กำลังยืนยันใบหน้า...' : '🔍 กำลังค้นหาใบหน้าในระบบ...');
       const matched = _matchFace(descriptor);
       if (!matched) {
         // ถ้าของตัวเอง "ไม่มีใบหน้าลงทะเบียน" → พาไปลงทะเบียนอัตโนมัติ แล้วกลับมาสแกนออกงาน
@@ -11427,8 +11427,27 @@
       faceMatcherDirty = false;
     }
 
-    // ---- Match face — double verification ----
+    // ---- Match face (self-only) — เร็วมาก: เทียบแค่ใบหน้าตัวเองที่ login อยู่ ----
+    function _matchFaceSelf(descriptor) {
+      if (!CU || !CU.id) return null;
+      const emp = db.employees.find(e => e._key === CU.id);
+      if (!emp) return null;
+      const descs = (emp.faceDescriptors || (emp.faceDescriptor ? [emp.faceDescriptor] : []))
+        .filter(d => Array.isArray(d) && d.length === 128);
+      if (!descs.length) return null;
+      const query = new Float32Array(descriptor);
+      const minDist = Math.min(...descs.map(d => faceapi.euclideanDistance(new Float32Array(d), query)));
+      if (minDist > FACE_MATCH_THRESHOLD) return null;
+      return { emp, dist: minDist };
+    }
+
+    // ---- Match face — double verification (ใช้สำหรับ admin/supervisor สแกนแทน) ----
     function _matchFace(descriptor) {
+      // ★ ถ้าพนักงาน login อยู่ → เทียบแค่ใบหน้าตัวเอง (เร็วมาก ไม่ต้องวนทุกคน)
+      if (CU && CU.role === 'employee') {
+        return _matchFaceSelf(descriptor);
+      }
+
       if (faceMatcherDirty || !faceMatcher) _rebuildFaceMatcher();
       if (!faceMatcher) return null;
 
