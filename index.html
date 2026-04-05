@@ -10162,6 +10162,7 @@
       _setFaceNameBadge(null);
       document.getElementById('face-modal').classList.add('active');
       setFaceStatus('info', 'กำลังเปิดกล้อง...');
+      startGpsParallel(); // ★ เริ่ม GPS ขนานตั้งแต่เปิดกล้อง
       await _startFaceCam();
     };
 
@@ -10193,6 +10194,7 @@
       _setFaceNameBadge(null);
       document.getElementById('face-modal').classList.add('active');
       setFaceStatus('info', 'กำลังเปิดกล้อง...');
+      startGpsParallel(); // ★ เริ่ม GPS ขนานตั้งแต่เปิดกล้อง
       await _startFaceCam();
     };
 
@@ -10251,7 +10253,7 @@
     //  FACE SECURITY CONSTANTS  (ปรับค่าได้ตามสภาพแวดล้อม)
     // ============================================================
     const FACE_MATCH_THRESHOLD = 0.48;  // ผ่อนขึ้น: สแกนติดง่าย (ความปลอดภัยอยู่ที่ ambiguity check)
-    const FACE_CONFIRM_FRAMES = 2;     // ผ่าน 2 เฟรมติดกัน — เร็วขึ้น
+    const FACE_CONFIRM_FRAMES = 1;     // ผ่าน 1 เฟรม — เร็วสุด (ปลอดภัยเพราะเทียบแค่ใบหน้าตัวเองที่ login)
     const FACE_CONFIRM_DIST_MAX = 0.46;  // ผ่อนให้ confirm ง่ายขึ้น
     const FACE_SCORE_MIN = 0.35;  // ลดลง: หาใบหน้าง่ายขึ้น ทั้งแสงน้อยและกล้องธรรมดา
     const FACE_REG_SAMPLES = 15;    // เก็บตัวอย่างเยอะไว้เพื่อความแม่นยำ
@@ -10785,9 +10787,11 @@
         setTimeout(() => stopFaceCam(), 5000); return;
       }
 
-      // ---- ตรวจ GPS + Anti-Fake ----
-      showGpsOverlay();
-      const gpsResult = await _getGpsResult();
+      // ---- ตรวจ GPS + Anti-Fake (ใช้ผลที่วัดขนานมาตั้งแต่เปิดกล้อง) ----
+      // ถ้ามีผลสดใหม่ใน 30 วิ → ใช้ทันที (ไม่ต้องรอ)
+      const _gpsReady = !!(_gpsFreshResult && (Date.now() - _gpsFreshResult.ts < GPS_REUSE_MAX_AGE_MS));
+      if (!_gpsReady) showGpsOverlay();
+      const gpsResult = await getGpsFresh();
       hideGpsOverlay();
       if (!gpsResult.available) {
         setFaceRing('red');
@@ -10917,9 +10921,10 @@
         setTimeout(() => stopFaceCam(), 5000); return;
       }
 
-      // ---- ตรวจ GPS ก่อน ----
-      showGpsOverlay();
-      const gpsResult = await _getGpsResult();
+      // ---- ตรวจ GPS ก่อน (ใช้ผลที่วัดขนานมาตั้งแต่เปิดกล้อง) ----
+      const _gpsReadyCO = !!(_gpsFreshResult && (Date.now() - _gpsFreshResult.ts < GPS_REUSE_MAX_AGE_MS));
+      if (!_gpsReadyCO) showGpsOverlay();
+      const gpsResult = await getGpsFresh();
       hideGpsOverlay();
       if (!gpsResult.available) {
         setFaceRing('red');
@@ -11029,6 +11034,47 @@
 
     // ---- Helper: find best face match ----
     // ---- GPS: check against ANY registered location ----
+
+    // ============================================================
+    //  GPS Parallel Prefetch — เริ่ม GPS ตอนเปิดกล้อง
+    //  ใช้ซ้ำได้ภายใน 30 วินาที (ลดเวลาสแกนใบหน้า)
+    // ============================================================
+    const GPS_REUSE_MAX_AGE_MS = 30 * 1000; // ใช้ซ้ำได้ภายใน 30 วินาที
+    let _gpsFreshResult = null;      // { result, ts }
+    let _gpsFreshInFlight = null;    // Promise ที่กำลังวัดอยู่
+
+    // เริ่มวัด GPS ขนาน (ไม่ await) — เรียกตอนเปิดกล้อง
+    function startGpsParallel() {
+      // ถ้ามีผลสดใหม่อยู่แล้ว ไม่ต้องวัดซ้ำ
+      if (_gpsFreshResult && (Date.now() - _gpsFreshResult.ts < GPS_REUSE_MAX_AGE_MS)) return;
+      // ถ้ากำลังวัดอยู่แล้ว ไม่ต้องซ้ำ
+      if (_gpsFreshInFlight) return;
+      _gpsFreshInFlight = (async () => {
+        try {
+          const r = await _getGpsResult();
+          _gpsFreshResult = { result: r, ts: Date.now() };
+          return r;
+        } finally {
+          _gpsFreshInFlight = null;
+        }
+      })();
+    }
+
+    // ใช้ GPS ที่สดใหม่ (จาก cache หรือ in-flight) ถ้าไม่มีก็วัดใหม่
+    async function getGpsFresh() {
+      // 1) มี cache สดใหม่ → ใช้เลย
+      if (_gpsFreshResult && (Date.now() - _gpsFreshResult.ts < GPS_REUSE_MAX_AGE_MS)) {
+        return _gpsFreshResult.result;
+      }
+      // 2) กำลังวัดอยู่ → รอผลเดียวกัน
+      if (_gpsFreshInFlight) {
+        return await _gpsFreshInFlight;
+      }
+      // 3) ไม่มี → วัดใหม่แล้วเก็บ cache
+      const r = await _getGpsResult();
+      _gpsFreshResult = { result: r, ts: Date.now() };
+      return r;
+    }
 
     // Promise-based GPS check — returns {available, ok, dist, loc}
     // ============================================================
