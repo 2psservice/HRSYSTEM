@@ -1978,6 +1978,10 @@
             startApp();
             if (CU.role === 'employee') {
               setTimeout(() => { prefetchEmployeeCheckinModeAfterLogin().catch(() => { }); }, 50);
+              // ★ Pre-warm: ดึง GPS ขนานในพื้นหลัง (พร้อมใช้เมื่อกดสแกน)
+              setTimeout(() => { try { startGpsParallel(); } catch (_) { } }, 100);
+              // ★ Pre-load face-api models (ให้เปิดกล้องครั้งแรกเร็วขึ้น)
+              setTimeout(() => { try { loadFaceModels().catch(() => { }); } catch (_) { } }, 300);
             }
             setTimeout(() => lsToast('ล็อกอินผ่าน LINE อัตโนมัติ', '#059669'), 500);
 
@@ -2126,6 +2130,10 @@
             startApp();
             if (CU.role === 'employee') {
               setTimeout(() => { prefetchEmployeeCheckinModeAfterLogin().catch(() => { }); }, 50);
+              // ★ Pre-warm: ดึง GPS ขนานในพื้นหลัง (พร้อมใช้เมื่อกดสแกน)
+              setTimeout(() => { try { startGpsParallel(); } catch (_) { } }, 100);
+              // ★ Pre-load face-api models (ให้เปิดกล้องครั้งแรกเร็วขึ้น)
+              setTimeout(() => { try { loadFaceModels().catch(() => { }); } catch (_) { } }, 300);
             }
 
             // 🟢 Auto Binding LINE Account 🟢
@@ -11011,12 +11019,34 @@
       }
     }
 
+    // ---- Compress data URL (resize + re-encode) to reduce upload size ----
+    async function _compressDataUrl(dataUrl, maxW = 400, quality = 0.7) {
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = reject;
+          im.src = dataUrl;
+        });
+        const scale = Math.min(1, maxW / (img.width || maxW));
+        const w = Math.max(1, Math.round((img.width || maxW) * scale));
+        const h = Math.max(1, Math.round((img.height || maxW) * scale));
+        const cvs = document.createElement('canvas');
+        cvs.width = w; cvs.height = h;
+        const ctx = cvs.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        return cvs.toDataURL('image/jpeg', quality);
+      } catch (_) { return dataUrl; }
+    }
+
     // ---- Capture face photo at checkin/checkout ----
     async function _captureCheckinPhoto(empId, empName, type, gpsResult) {
       try {
-        const photo = _pendingFacePhoto || null;
+        let photo = _pendingFacePhoto || null;
         _pendingFacePhoto = null;
         if (!photo) return;
+        // ★ บีบอัดรูปก่อนอัปโหลด (ลดขนาด ~30-50%)
+        photo = await _compressDataUrl(photo, 400, 0.7);
         const key = Date.now() + '_' + empId;
         // ใช้ queue + retry เพื่อป้องกันรูปหาย
         await fbSetQ('/checkinPhotos/' + key, {
