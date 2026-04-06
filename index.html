@@ -2187,6 +2187,8 @@
     function startApp() {
       document.getElementById('login-screen').classList.remove('active');
       document.getElementById('app-screen').classList.add('active');
+      // ★ Auto-cleanup: ลบข้อมูลเก่าเบื้องหลัง (ทุก 12 ชม.)
+      setTimeout(() => { _autoCleanupFirebase().catch(e => console.warn('[AutoCleanup]', e)); }, 5000);
       // บันทึก remember me ถ้าเลือกไว้
       try {
         const chk = document.getElementById('remember-me');
@@ -11246,6 +11248,51 @@
     let _checkinModeResolveInFlightKey = null;
     const CHECKIN_PREFETCH_TTL_MS = 3 * 60 * 1000;
 
+    /** ★ หา fallback mode จากประวัติ attendance ของพนักงาน (เมื่อ GPS ล้มเหลว) */
+    function _fallbackModeFromAttendance(empObj) {
+      const uniform = uniformAreaCheckinModeIfAny();
+      if (uniform != null) return { mode: uniform, locId: null, locName: '' };
+
+      // ดูจากประวัติเช็คอินวันนี้/ล่าสุดว่าพนักงานเคยลงที่ไหน
+      if (empObj && empObj._key) {
+        // 1) วันนี้
+        const todayBucket = db.attendance[todayStr];
+        if (todayBucket) {
+          const myRec = Object.values(todayBucket).find(r => r.empId === empObj._key && r.locationId);
+          if (myRec && myRec.locationId) {
+            const m = areaCheckinMethods[myRec.locationId];
+            if (m) {
+              const loc = gpsLocations.find(l => l.id === myRec.locationId);
+              return { mode: m, locId: myRec.locationId, locName: loc ? loc.name : '' };
+            }
+          }
+        }
+        // 2) ค้นจากวันล่าสุด (ย้อนหลัง 7 วัน)
+        const sorted = Object.keys(db.attendance).filter(d => d <= todayStr).sort().reverse().slice(0, 7);
+        for (const dk of sorted) {
+          const bucket = db.attendance[dk];
+          if (!bucket) continue;
+          const rec = Object.values(bucket).find(r => r.empId === empObj._key && r.locationId);
+          if (rec && rec.locationId) {
+            const m = areaCheckinMethods[rec.locationId];
+            if (m) {
+              const loc = gpsLocations.find(l => l.id === rec.locationId);
+              return { mode: m, locId: rec.locationId, locName: loc ? loc.name : '' };
+            }
+          }
+        }
+      }
+
+      // 3) ถ้ามีพื้นที่เดียวในระบบ → ใช้โหมดของพื้นที่นั้น
+      if (gpsLocations.length === 1) {
+        const onlyLoc = gpsLocations[0];
+        const m = areaCheckinMethods[onlyLoc.id];
+        if (m) return { mode: m, locId: onlyLoc.id, locName: onlyLoc.name || '' };
+      }
+
+      return { mode: checkinMode, locId: null, locName: '' };
+    }
+
     /** งานจริง: อ่าน GPS แล้วเลือกโหมดตามพื้นที่ */
     async function _resolveAreaBasedCheckinModeCore(empObj) {
       const uniform = uniformAreaCheckinModeIfAny();
@@ -11264,14 +11311,18 @@
 
       const gpsResult = await _getGpsResult();
       if (!gpsResult.available) {
+        // ★ GPS ล้มเหลว → ดูจากประวัติ attendance / พื้นที่เดียว / ค่าเริ่มต้น
+        const fb = _fallbackModeFromAttendance(empObj);
+        const bannerText = fb.locName
+          ? `<i class="fas fa-satellite-dish" style="margin-right:6px;"></i>GPS ไม่พร้อม — ใช้วิธีเช็คชื่อตามพื้นที่ล่าสุด: <b>${fb.locName}</b>`
+          : '<i class="fas fa-satellite-dish" style="margin-right:6px;"></i>เปิด <b>GPS</b> และอนุญาตตำแหน่ง เพื่อให้ระบบเลือกวิธีเช็คชื่อตามพื้นที่ที่คุณอยู่';
         return {
-          mode: fallbackMode,
-          locationId: null,
-          areaName: '',
+          mode: fb.mode,
+          locationId: fb.locId,
+          areaName: fb.locName,
           outside: false,
           gpsUnavailable: true,
-          banner: '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e;">' +
-            '<i class="fas fa-satellite-dish" style="margin-right:6px;"></i>เปิด <b>GPS</b> และอนุญาตตำแหน่ง เพื่อให้ระบบเลือกวิธีเช็คชื่อตามพื้นที่ที่คุณอยู่</div>'
+          banner: '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e;">' + bannerText + '</div>'
         };
       }
 
@@ -13046,6 +13097,122 @@
           if (key && key.startsWith('lnDailySummary_')) localStorage.removeItem(key);
         }
       } catch (_) { }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  AUTO-CLEANUP: ลบข้อมูลเก่าอัตโนมัติ เพื่อประหยัดพื้นที่ Firebase
+    //  ✅ checkinPhotos  — 48 ชม. (มีอยู่แล้วใน lsLoadPhotos)
+    //  🔧 liveTrackHistory — 15 วัน
+    //  🔧 fraudAlerts      — 15 วัน
+    //  🔧 attendance        — 13 เดือน
+    // ══════════════════════════════════════════════════════════════════════
+    const _CLEANUP_KEY = '2ps_lastCleanup';
+    const _CLEANUP_INTERVAL_MS = 12 * 3600 * 1000; // ทำความสะอาดทุก 12 ชม.
+
+    async function _autoCleanupFirebase() {
+      // ป้องกันทำซ้ำถี่เกินไป — ทำทุก 12 ชม.
+      try {
+        const last = parseInt(localStorage.getItem(_CLEANUP_KEY) || '0');
+        if (Date.now() - last < _CLEANUP_INTERVAL_MS) return;
+        localStorage.setItem(_CLEANUP_KEY, String(Date.now()));
+      } catch (_) { }
+
+      console.log('[AutoCleanup] เริ่มล้างข้อมูลเก่า...');
+      let totalDeleted = 0;
+
+      // ── 1) liveTrackHistory — ลบหลัง 15 วัน ──
+      try {
+        const cutoff15d = Date.now() - 15 * 24 * 3600 * 1000;
+        const liveData = await fbGet('/liveTrackHistory').catch(() => null);
+        if (liveData && typeof liveData === 'object') {
+          for (const [empId, entries] of Object.entries(liveData)) {
+            if (!entries || typeof entries !== 'object') continue;
+            const delKeys = [];
+            for (const [k, v] of Object.entries(entries)) {
+              const ts = v?.timestamp || v?.ts || 0;
+              if (ts && ts < cutoff15d) delKeys.push(k);
+            }
+            // ลบทีละ batch
+            for (const k of delKeys) {
+              await fbDelete(`/liveTrackHistory/${empId}/${k}`).catch(() => { });
+              totalDeleted++;
+            }
+            // ถ้าลบหมดแล้ว ลบ node ของพนักงานด้วย
+            if (delKeys.length > 0 && Object.keys(entries).length === delKeys.length) {
+              await fbDelete(`/liveTrackHistory/${empId}`).catch(() => { });
+            }
+          }
+        }
+        console.log(`[AutoCleanup] liveTrackHistory: ลบ ${totalDeleted} รายการ (เกิน 15 วัน)`);
+      } catch (e) { console.warn('[AutoCleanup] liveTrackHistory error:', e); }
+
+      // ── 2) fraudAlerts — ลบหลัง 15 วัน ──
+      let fraudDel = 0;
+      try {
+        const cutoff15d = Date.now() - 15 * 24 * 3600 * 1000;
+        const fraudData = await fbGet('/fraudAlerts').catch(() => null);
+        if (fraudData && typeof fraudData === 'object') {
+          for (const [k, v] of Object.entries(fraudData)) {
+            const ts = v?.timestamp || v?.ts || 0;
+            if (ts && ts < cutoff15d) {
+              await fbDelete(`/fraudAlerts/${k}`).catch(() => { });
+              fraudDel++;
+            }
+          }
+        }
+        console.log(`[AutoCleanup] fraudAlerts: ลบ ${fraudDel} รายการ (เกิน 15 วัน)`);
+      } catch (e) { console.warn('[AutoCleanup] fraudAlerts error:', e); }
+
+      // ── 3) attendance — ลบเดือนที่เกิน 13 เดือน ──
+      let attDel = 0;
+      try {
+        const now = new Date();
+        const cutoffDate = new Date(now.getFullYear(), now.getMonth() - 13, 1);
+        const cutoffStr = cutoffDate.toISOString().slice(0, 10); // yyyy-mm-dd
+        const attKeys = await fbGet('/attendance').catch(() => null);
+        if (attKeys && typeof attKeys === 'object') {
+          for (const dateKey of Object.keys(attKeys)) {
+            // dateKey = "2025-01-15"
+            if (dateKey < cutoffStr) {
+              await fbDelete(`/attendance/${dateKey}`).catch(() => { });
+              attDel++;
+            }
+          }
+        }
+        console.log(`[AutoCleanup] attendance: ลบ ${attDel} วัน (เกิน 13 เดือน)`);
+      } catch (e) { console.warn('[AutoCleanup] attendance error:', e); }
+
+      // ── 4) checkinPhotos — ลบเกิน 48 ชม. (เสริมจากที่มีใน lsLoadPhotos) ──
+      let photoDel = 0;
+      try {
+        const cutoff48h = Date.now() - 48 * 3600 * 1000;
+        const photoData = await fbGet('/checkinPhotos').catch(() => null);
+        if (photoData && typeof photoData === 'object') {
+          for (const [k, v] of Object.entries(photoData)) {
+            if (v?.timestamp && v.timestamp < cutoff48h) {
+              await fbDelete(`/checkinPhotos/${k}`).catch(() => { });
+              photoDel++;
+            }
+          }
+        }
+        console.log(`[AutoCleanup] checkinPhotos: ลบ ${photoDel} รายการ (เกิน 48 ชม.)`);
+      } catch (e) { console.warn('[AutoCleanup] checkinPhotos error:', e); }
+
+      // ── 5) supGpsTrack — ลบหลัง 15 วัน (ข้อมูล GPS หัวหน้างาน) ──
+      try {
+        const cutoff15d = Date.now() - 15 * 24 * 3600 * 1000;
+        const supTrack = await fbGet('/supGpsTrack').catch(() => null);
+        if (supTrack && typeof supTrack === 'object') {
+          for (const [k, v] of Object.entries(supTrack)) {
+            const ts = v?.timestamp || v?.ts || 0;
+            if (ts && ts < cutoff15d) {
+              await fbDelete(`/supGpsTrack/${k}`).catch(() => { });
+            }
+          }
+        }
+      } catch (_) { }
+
+      console.log(`[AutoCleanup] เสร็จสิ้น — ลบทั้งหมด: liveTrack=${totalDeleted}, fraud=${fraudDel}, attendance=${attDel}วัน, photos=${photoDel}`);
     }
 
     // ── Admin settings page ──────────────────────────────────────────────
