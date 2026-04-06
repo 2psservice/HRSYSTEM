@@ -2682,7 +2682,7 @@
         const locMap = {}; // locKey -> { id, name, icon, records[] }
         records.forEach(r => {
           const lid = r.locationId || '__unknown__';
-          const lnm = r.locationName || (r.checkInMethod === 'scanner' ? 'เครื่องสแกนนิ้ว' : 'ไม่ระบุสถานที่');
+          const lnm = r.locationName || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : 'ไม่ระบุสถานที่');
           const isScan = r.checkInMethod === 'scanner';
           if (!locMap[lid]) locMap[lid] = { id: lid, name: lnm, isScan, records: [] };
           locMap[lid].records.push(r);
@@ -2938,7 +2938,7 @@
       } else if (type === 'loc') {
         const locId = dept; // reuse deptEnc param as locId
         const locRecs = records.filter(r => (r.locationId || '__unknown__') === locId);
-        const locName = locRecs.length > 0 ? (locRecs[0].locationName || (locRecs[0].checkInMethod === 'scanner' ? 'เครื่องสแกนนิ้ว' : 'ไม่ระบุสถานที่')) : locId;
+        const locName = locRecs.length > 0 ? (locRecs[0].locationName || (locRecs[0].checkInMethod === 'scanner' || locRecs[0].source === 'scanner' ? 'ระยอง' : 'ไม่ระบุสถานที่')) : locId;
         title = `📍 ${locName} — มา ${locRecs.length} คน`;
         cols = ['ชื่อ-นามสกุล', 'สายงาน', 'หัวหน้า', 'เวลาเข้า', 'เวลาออก', 'สถานะ', 'วิธี', 'GPS'];
         rows = locRecs.map(r => {
@@ -5664,7 +5664,7 @@
       // supervisor, dept, location options สำหรับ filter
       const supOpts = ['', ...new Set(recs.map(r => r.sup).filter(Boolean))];
       const deptOpts = ['', ...new Set(recs.map(r => r.dept).filter(Boolean))];
-      const locOpts = ['', ...new Set(recs.map(r => r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '')).filter(Boolean))];
+      const locOpts = ['', ...new Set(recs.map(r => r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '') || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : '')).filter(Boolean))];
 
       el.innerHTML = `
     <!-- Filter bar -->
@@ -5803,7 +5803,7 @@
         const methodIcon = r.checkInMethod === 'face' ? '😊' : r.checkInMethod === 'scanner' ? '🖐' : r.checkInMethod === 'gps_button' ? '📍' : '📱';
         const advAmt = sumAdvances(r.empId);
         const net = r.total - advAmt;
-        const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '-');
+        const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '') || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : '-');
         return `<tr style="border-bottom:1px solid #f1f5f9;transition:background .1s;${r._late ? 'background:#fff7f7;' : ''}"
       onmouseover="this.style.background='${r._late ? '#fef2f2' : '#f8fafc'}'"
       onmouseout="this.style.background='${r._late ? '#fff7f7' : ''}'">
@@ -5872,7 +5872,7 @@
         if (sup && r.sup !== sup) return false;
         if (dept && r.dept !== dept) return false;
         if (loc) {
-          const rLoc = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '');
+          const rLoc = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '') || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : '');
           if (rLoc !== loc) return false;
         }
         if (status === 'ontime' && r._late) return false;
@@ -5909,7 +5909,7 @@
         ['ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'สถานที่เข้างาน', 'เวลาเข้า', 'เวลาออก', 'สถานะ', 'สาย (นาที)', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', 'เบิกล่วงหน้า', 'คงเหลือ', 'GPS', 'วิธี'],
         ...recs.map(r => {
           const adv = sumAdvances(r.empId);
-          const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '-');
+          const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '') || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : '-');
           return [
             r.empName, r.dept || '-', r.sup || '-', locName,
             r.checkInTime, r.checkOutTime || '-',
@@ -6422,6 +6422,20 @@
           </div>
         </div>
 
+        <!-- ชื่อเรียกอื่น / Aliases (สำหรับ match สแกนนิ้ว) -->
+        <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:14px;padding:14px;">
+          <div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:8px;">
+            <i class="fas fa-tags" style="margin-right:6px;"></i>ชื่อเรียกอื่น (Aliases)
+          </div>
+          <input type="text" id="loc-aliases" placeholder="เช่น Rayong yard, ระยอง, RY01"
+            style="width:100%;border:1.5px solid #ddd6fe;border-radius:10px;padding:9px 10px;font-size:13px;color:#4c1d95;background:#fff;outline:none;box-sizing:border-box;font-family:Sarabun,sans-serif;"
+            onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#ddd6fe'">
+          <div style="font-size:10px;color:#6b7280;margin-top:6px;">
+            <i class="fas fa-info-circle" style="color:#7c3aed;margin-right:3px;"></i>
+            คั่นด้วยเครื่องหมาย <strong>,</strong> (comma) · ใช้ auto-detect สถานที่จากชื่อไฟล์สแกนนิ้ว
+          </div>
+        </div>
+
         <input type="hidden" id="loc-edit-id" value="">
         <div style="display:flex;gap:10px;padding-top:4px;">
           <button onclick="saveLocation()"
@@ -6481,6 +6495,12 @@
           <i class="fas fa-circle-notch" style="font-size:9px;margin-right:3px;"></i>${loc.radius} ม.
         </div>
       </div>
+      <!-- Aliases bar -->
+      ${(loc.aliases && (Array.isArray(loc.aliases) ? loc.aliases.length : loc.aliases)) ? `
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 16px;background:#f5f3ff;border-top:1px solid #ede9fe;flex-wrap:wrap;">
+        <i class="fas fa-tags" style="font-size:10px;color:#7c3aed;"></i>
+        ${(Array.isArray(loc.aliases) ? loc.aliases : String(loc.aliases).split(',').map(s=>s.trim())).map(a => '<span style="font-size:10px;background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:6px;font-weight:600;">' + a + '</span>').join('')}
+      </div>` : ''}
       <!-- Work time bar -->
       ${(loc.workStart || loc.workEnd) ? `
       <div style="display:flex;align-items:center;gap:16px;padding:8px 16px;background:#f0fdf4;border-top:1px solid #d1fae5;">
@@ -6635,6 +6655,8 @@
       document.getElementById('loc-edit-id').value = '';
       document.getElementById('loc-search').value = '';
       document.getElementById('loc-search-results').style.display = 'none';
+      const aliasEl = document.getElementById('loc-aliases');
+      if (aliasEl) aliasEl.value = '';
       document.getElementById('loc-modal-title').textContent = 'เพิ่มสถานที่';
       document.getElementById('loc-mini-map').style.display = 'none';
       if (_miniMap) { _miniMap.remove(); _miniMap = null; _miniMarker = null; _miniCircle = null; }
@@ -6655,6 +6677,12 @@
       document.getElementById('loc-radius-val').textContent = loc.radius || 100;
       document.getElementById('loc-work-start').value = loc.workStart || '08:00';
       document.getElementById('loc-work-end').value = loc.workEnd || '17:00';
+      // โหลด aliases
+      const aliasEl = document.getElementById('loc-aliases');
+      if (aliasEl) {
+        const aliases = loc.aliases || [];
+        aliasEl.value = Array.isArray(aliases) ? aliases.join(', ') : String(aliases);
+      }
       document.getElementById('loc-edit-id').value = id;
       document.getElementById('loc-search').value = '';
       document.getElementById('loc-search-results').style.display = 'none';
@@ -6681,11 +6709,14 @@
       const radius = parseInt(document.getElementById('loc-radius').value) || 100;
       const workStart = document.getElementById('loc-work-start').value || '08:00';
       const workEnd = document.getElementById('loc-work-end').value || '17:00';
+      // Aliases
+      const aliasRaw = (document.getElementById('loc-aliases')?.value || '').trim();
+      const aliases = aliasRaw ? aliasRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
       const editId = document.getElementById('loc-edit-id').value;
       if (!name) return alert('กรุณากรอกชื่อสถานที่');
       if (isNaN(lat) || isNaN(lng)) return alert('กรุณากรอกพิกัดให้ถูกต้อง');
       showSync();
-      const payload = { name, lat, lng, radius, workStart, workEnd };
+      const payload = { name, lat, lng, radius, workStart, workEnd, aliases };
       if (editId) {
         await fbPatch('/settings/gpsLocations/' + editId, payload);
         const idx = gpsLocations.findIndex(l => l.id === editId);
@@ -12969,9 +13000,9 @@
         let locName = r.locationName || '';
         if (!locName && r.locationId) {
           const loc = gpsLocations.find(l => l.id === r.locationId);
-          locName = loc?.name || loc?.label || r.locationId || 'ไม่ระบุ';
+          locName = loc?.name || loc?.label || r.locationId || '';
         }
-        if (!locName) locName = 'ไม่ระบุสถานที่';
+        if (!locName) locName = (r.checkInMethod === 'scanner' || r.source === 'scanner') ? 'ระยอง' : 'ไม่ระบุสถานที่';
         locMap[locName] = (locMap[locName] || 0) + 1;
       });
       const locLines = Object.entries(locMap)
@@ -15167,212 +15198,451 @@ async function handle(req) {
         }
       } catch (_) { }
 
+      // Load all published payslips for badge display
+      let allPublished = {};
+      try {
+        const pubAll = await fbGet('/publishedPayslips');
+        if (pubAll && typeof pubAll === 'object') allPublished = pubAll;
+      } catch (_) { }
+
+      _ysYear = parseInt(todayStr.slice(0, 4));
+
+      // Helper: build published month badges for an employee
+      const _pubBadges = (empKey) => {
+        const empPub = allPublished[empKey];
+        if (!empPub || typeof empPub !== 'object') return '';
+        const ymKeys = Object.keys(empPub).sort();
+        if (!ymKeys.length) return '';
+        const monthShort = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+        // Group by year
+        const byYear = {};
+        ymKeys.forEach(yk => {
+          const [y, m] = yk.split('_');
+          if (!byYear[y]) byYear[y] = [];
+          byYear[y].push(parseInt(m));
+        });
+        let html = '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">';
+        Object.keys(byYear).sort().forEach(y => {
+          const be = parseInt(y) + 543;
+          byYear[y].sort((a,b) => a - b).forEach(m => {
+            html += '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#dcfce7;color:#15803d;font-weight:600;white-space:nowrap;">' + monthShort[m - 1] + String(be).slice(-2) + '</span>';
+          });
+        });
+        html += '</div>';
+        return html;
+      };
+
       mc.innerHTML = `
-  <div style="padding:20px 24px 60px;">
+  <div style="padding:20px 24px 60px;" id="payslip-root">
 
     <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
       <div>
-        <div style="font-size:20px;font-weight:700;color:#1d1d1f;letter-spacing:-0.4px;">สลิปเงินเดือน</div>
-        <div style="font-size:12px;color:#86868b;margin-top:2px;">ตั้งค่า ออก PDF และจัดการสลิปพนักงาน</div>
+        <div style="font-size:22px;font-weight:800;color:#1d1d1f;letter-spacing:-0.5px;"><i class="fas fa-file-invoice-dollar" style="color:#16a34a;margin-right:8px;"></i>สลิปเงินเดือน</div>
+        <div style="font-size:12px;color:#86868b;margin-top:3px;">เลือกพนักงาน → กรอกข้อมูลรายเดือน → เผยแพร่สลิป</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button onclick="downloadYearlySummaryTemplate('all')" style="padding:8px 14px;background:#f5f5f7;border:1px solid #e5e5ea;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;color:#1d1d1f;" title="ดาวน์โหลด Excel ข้อมูลทุกคน (พร้อมข้อมูลที่กรอกแล้ว)">
+          <i class="fas fa-download" style="color:#16a34a;"></i> Excel ทุกคน
+        </button>
+        <label style="padding:8px 14px;background:#f5f5f7;border:1px solid #e5e5ea;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;color:#1d1d1f;">
+          <i class="fas fa-upload" style="color:#6366f1;"></i> อัปโหลด Excel
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="uploadYearlySummary(this)">
+        </label>
+        <button onclick="psOpenSettings()" title="ตั้งค่าการแสดงผลสลิป"
+          style="width:38px;height:38px;border-radius:10px;border:1px solid #e5e5ea;background:#f5f5f7;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;color:#6b7280;transition:all .15s;"
+          onmouseover="this.style.background='#e5e7eb';this.style.color='#1d1d1f'" onmouseout="this.style.background='#f5f5f7';this.style.color='#6b7280'">
+          <i class="fas fa-cog"></i>
+        </button>
       </div>
     </div>
 
-    <!-- 2 col layout: left=settings, right=generate -->
-    <div style="display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start;">
+    <!-- ===== Search + Employee List ===== -->
+    <div id="ps-emp-list-section">
+      <div style="position:relative;margin-bottom:16px;">
+        <i class="fas fa-search" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:14px;"></i>
+        <input type="text" id="ps-search" placeholder="ค้นหาชื่อพนักงาน, แผนก..." oninput="psFilterEmpList()"
+          style="width:100%;padding:12px 14px 12px 40px;border:1.5px solid #e5e7eb;border-radius:14px;font-size:14px;font-family:Sarabun,sans-serif;outline:none;background:#fff;box-sizing:border-box;transition:border-color .2s;"
+          onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#e5e7eb'">
+      </div>
+      <div id="ps-emp-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
+        ${db.employees.map((e, idx) => {
+          const colors = ['#0891b2','#16a34a','#7c3aed','#dc2626','#d97706','#db2777','#0369a1','#4f46e5'];
+          const c = colors[idx % colors.length];
+          const badges = _pubBadges(e._key);
+          const hasPub = !!allPublished[e._key];
+          return `
+        <div class="ps-emp-card" data-name="${(e.name||'').toLowerCase()}" data-dept="${(e.dept||'').toLowerCase()}" data-key="${e._key}"
+          onclick="psOpenEmployee('${e._key}')"
+          style="background:#fff;border:1.5px solid #e5e7eb;border-radius:14px;padding:14px 16px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:12px;"
+          onmouseover="this.style.borderColor='${c}';this.style.boxShadow='0 2px 12px ${c}22'" onmouseout="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'">
+          <div style="width:40px;height:40px;border-radius:50%;background:${c};color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">
+            ${(e.name||'?').charAt(0)}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.name}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${e.dept || '-'}${e.position ? ' · ' + e.position : ''}</div>
+            ${badges}
+          </div>
+          ${hasPub ? '<i class="fas fa-check-circle" style="color:#16a34a;font-size:11px;flex-shrink:0;margin-right:2px;" title="มีสลิปเผยแพร่แล้ว"></i>' : ''}
+          <i class="fas fa-chevron-right" style="color:#d1d5db;font-size:12px;flex-shrink:0;"></i>
+        </div>`;
+        }).join('')}
+      </div>
+      <div style="text-align:center;padding:12px;color:#94a3b8;font-size:12px;margin-top:8px;" id="ps-emp-count">
+        ทั้งหมด ${db.employees.length} คน
+      </div>
+    </div>
 
-      <!-- ===== LEFT: Settings ===== -->
-      <div>
-        <div style="background:#fff;border-radius:18px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07),0 0 0 1px rgba(0,0,0,.05);">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-            <div style="width:28px;height:28px;border-radius:8px;background:rgba(0,113,227,.1);display:flex;align-items:center;justify-content:center;">
-              <i class="fas fa-sliders-h" style="font-size:12px;color:#0071e3;"></i>
+    <!-- ===== Employee Yearly Detail (hidden initially) ===== -->
+    <div id="ps-detail-section" style="display:none;">
+      <div id="ps-detail-content"></div>
+    </div>
+
+    <!-- ===== Settings Modal (hidden) ===== -->
+    <div id="ps-settings-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;" onclick="if(event.target===this)psCloseSettings()">
+      <div style="background:#fff;border-radius:20px;width:94%;max-width:480px;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25);position:relative;" onclick="event.stopPropagation()">
+        <button onclick="psCloseSettings()" style="position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;border:none;background:#f5f5f7;cursor:pointer;font-size:14px;color:#86868b;display:flex;align-items:center;justify-content:center;">
+          <i class="fas fa-times"></i>
+        </button>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+          <div style="width:34px;height:34px;border-radius:10px;background:rgba(0,113,227,.1);display:flex;align-items:center;justify-content:center;">
+            <i class="fas fa-cog" style="font-size:15px;color:#0071e3;"></i>
+          </div>
+          <div>
+            <div style="font-size:16px;font-weight:700;color:#1d1d1f;">ตั้งค่าการแสดงผลสลิป</div>
+            <div style="font-size:11px;color:#86868b;">มีผลกับพนักงานทุกคน</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#86868b;margin-bottom:14px;padding:10px 12px;background:#f5f5f7;border-radius:10px;">
+          <i class="fas fa-info-circle" style="margin-right:6px;color:#0071e3;"></i>
+          เลือกรายการเงินได้และเงินหักที่จะแสดงบน PDF สลิป
+        </div>
+
+        <!-- Income fields -->
+        <div style="font-size:11px;font-weight:700;color:#30d158;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">
+          <i class="fas fa-plus-circle" style="margin-right:5px;"></i>เงินได้ (Income)
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;" id="pf-income"></div>
+
+        <!-- Deduct fields -->
+        <div style="font-size:11px;font-weight:700;color:#ff3b30;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">
+          <i class="fas fa-minus-circle" style="margin-right:5px;"></i>เงินหัก (Deductions)
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;" id="pf-deduct"></div>
+
+        <!-- Save button -->
+        <button onclick="savePayslipSettings()" id="save-pf-btn"
+          style="width:100%;background:#0071e3;color:#fff;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s;"
+          onmouseover="this.style.background='#0077ed'" onmouseout="this.style.background='#0071e3'">
+          <i class="fas fa-save"></i> บันทึกการตั้งค่า
+        </button>
+      </div>
+    </div>
+
+  </div>`;
+    }
+
+    // ---- ค้นหาพนักงาน ----
+    window.psFilterEmpList = function () {
+      const q = (document.getElementById('ps-search')?.value || '').toLowerCase().trim();
+      const cards = document.querySelectorAll('.ps-emp-card');
+      let shown = 0;
+      cards.forEach(c => {
+        const name = c.dataset.name || '';
+        const dept = c.dataset.dept || '';
+        const match = !q || name.includes(q) || dept.includes(q);
+        c.style.display = match ? '' : 'none';
+        if (match) shown++;
+      });
+      const countEl = document.getElementById('ps-emp-count');
+      if (countEl) countEl.textContent = q ? `พบ ${shown} คน` : `ทั้งหมด ${db.employees.length} คน`;
+    };
+
+    // ---- เปิด/ปิด Settings Modal ----
+    window.psOpenSettings = function () {
+      const modal = document.getElementById('ps-settings-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+
+      // Render field toggles dynamically
+      ['income', 'deduct'].forEach(group => {
+        const container = document.getElementById('pf-' + group);
+        if (!container) return;
+        const isIncome = group === 'income';
+        container.innerHTML = Object.entries(payslipFields[group]).map(([k, f]) => {
+          const onBg = isIncome ? 'rgba(48,209,88,.07)' : 'rgba(255,59,48,.06)';
+          const onBorder = isIncome ? 'rgba(48,209,88,.3)' : 'rgba(255,59,48,.25)';
+          const accent = isIncome ? '#30d158' : '#ff3b30';
+          const badgeBg = f.on ? (isIncome ? 'rgba(48,209,88,.15)' : 'rgba(255,59,48,.12)') : '#e5e5ea';
+          const badgeColor = f.on ? (isIncome ? '#248a3d' : '#d70015') : '#86868b';
+          return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:' + (f.on ? onBg : '#f5f5f7') + ';border:1px solid ' + (f.on ? onBorder : '#e5e5ea') + ';cursor:pointer;transition:all .15s;" id="pfl-' + group + '-' + k + '">'
+            + '<input type="checkbox" ' + (f.on ? 'checked' : '') + ' onchange="togglePayslipField(\'' + group + '\',\'' + k + '\',this.checked)" style="width:16px;height:16px;accent-color:' + accent + ';cursor:pointer;flex-shrink:0;">'
+            + '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1d1d1f;">' + f.label + '</div><div style="font-size:11px;color:#86868b;">' + f.en + '</div></div>'
+            + '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:' + badgeBg + ';color:' + badgeColor + ';" id="pfb-' + group + '-' + k + '">' + (f.on ? 'แสดง' : 'ซ่อน') + '</span>'
+            + '</label>';
+        }).join('');
+      });
+    };
+
+    window.psCloseSettings = function () {
+      const modal = document.getElementById('ps-settings-modal');
+      if (modal) modal.style.display = 'none';
+    };
+
+    // ---- เปิดหน้ารายละเอียดพนักงาน ----
+    window.psOpenEmployee = async function (empKey) {
+      document.getElementById('ps-emp-list-section').style.display = 'none';
+      const detailSection = document.getElementById('ps-detail-section');
+      detailSection.style.display = '';
+
+      const emp = db.employees.find(e => e._key === empKey);
+      const empName = emp?.name || empKey;
+      const year = _ysYear;
+
+      const content = document.getElementById('ps-detail-content');
+      content.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:20px;"></i><div style="margin-top:8px;font-size:13px;">กำลังโหลดข้อมูล...</div></div>';
+
+      // โหลดข้อมูลจาก Firebase
+      let data = {};
+      try {
+        const raw = await fbGet(`/payslipYearly/${empKey}`).catch(() => null);
+        if (raw && typeof raw === 'object') data = raw;
+      } catch (_) { }
+
+      // โหลดสถานะ publish
+      let publishedData = {};
+      try {
+        const pubRaw = await fbGet(`/publishedPayslips/${empKey}`).catch(() => null);
+        if (pubRaw && typeof pubRaw === 'object') publishedData = pubRaw;
+      } catch (_) { }
+
+      _psRenderDetail(empKey, empName, emp, year, data, publishedData);
+    };
+
+    function _psRenderDetail(empKey, empName, emp, year, data, publishedData) {
+      const content = document.getElementById('ps-detail-content');
+      if (!content) return;
+      const F = v => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const iS = 'width:100%;padding:6px 4px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;text-align:right;box-sizing:border-box;font-family:Sarabun,sans-serif;background:#fff;outline:none;transition:border-color .15s;';
+
+      // สร้างข้อมูล 12 เดือน
+      const months = [];
+      let ytdIncome = 0, ytdSso = 0;
+      for (let m = 1; m <= 12; m++) {
+        const mm = String(m).padStart(2, '0');
+        const ym = `${year}-${mm}`;
+        const ymKey = ym.replace('-', '_');
+        const saved = data[ymKey] || {};
+        const base = parseFloat(saved.base) || 0;
+        const ot = parseFloat(saved.ot) || 0;
+        const bonus = parseFloat(saved.bonus) || 0;
+        const income = base + ot + bonus;
+        const tax = parseFloat(saved.tax) || 0;
+        const sso = parseFloat(saved.sso) || 0;
+        const other = parseFloat(saved.other) || 0;
+        const deduct = tax + sso + other;
+        const net = income - deduct;
+        ytdIncome += income;
+        ytdSso += sso;
+        const isPublished = !!publishedData[ymKey];
+        months.push({ m, mm, ym, ymKey, monthTH: _YS_MONTHS_TH[m - 1], base, ot, bonus, income, tax, sso, other, deduct, net, ytdIncome, ytdSso, isPublished });
+      }
+
+      content.innerHTML = `
+      <!-- Back button + employee info + year -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button onclick="psBackToList()" style="width:36px;height:36px;border-radius:10px;border:1.5px solid #e5e7eb;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:#64748b;transition:all .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+            <i class="fas fa-arrow-left"></i>
+          </button>
+          <div>
+            <div style="font-size:18px;font-weight:800;color:#1e293b;display:flex;align-items:center;gap:8px;">
+              <i class="fas fa-user" style="color:#16a34a;"></i>${empName}
             </div>
-            <span style="font-size:14px;font-weight:600;color:#1d1d1f;">ตั้งค่าการแสดงผลสลิป (E-Slip)</span>
+            <div style="font-size:11px;color:#94a3b8;">${emp?.dept || '-'}${emp?.position ? ' · ' + emp.position : ''}</div>
           </div>
-          <div style="font-size:12px;color:#86868b;margin-bottom:14px;padding:10px 12px;background:#f5f5f7;border-radius:10px;">
-            <i class="fas fa-info-circle" style="margin-right:6px;color:#0071e3;"></i>
-            เลือกรายการเงินได้และเงินหักที่จะแสดงบน PDF สลิป (มีผลกับพนักงานทุกคน)
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="psDetailChangeYear(-1,'${empKey}')" style="width:32px;height:34px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font-size:15px;color:#64748b;">‹</button>
+            <span id="ps-detail-year" style="font-size:15px;font-weight:800;color:#1d1d1f;min-width:55px;text-align:center;">${year + 543}</span>
+            <button onclick="psDetailChangeYear(1,'${empKey}')" style="width:32px;height:34px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font-size:15px;color:#64748b;">›</button>
           </div>
-
-          <!-- Income fields -->
-          <div style="font-size:11px;font-weight:700;color:#30d158;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">
-            <i class="fas fa-plus-circle" style="margin-right:5px;"></i>เงินได้ (Income)
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;" id="pf-income">
-            ${Object.entries(payslipFields.income).map(([k, f]) => `
-            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:${f.on ? 'rgba(48,209,88,.07)' : '#f5f5f7'};border:1px solid ${f.on ? 'rgba(48,209,88,.3)' : '#e5e5ea'};cursor:pointer;transition:all .15s;" id="pfl-income-${k}">
-              <input type="checkbox" id="pfc-income-${k}" ${f.on ? 'checked' : ''} onchange="togglePayslipField('income','${k}',this.checked)"
-                style="width:16px;height:16px;accent-color:#30d158;cursor:pointer;flex-shrink:0;">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:#1d1d1f;">${f.label}</div>
-                <div style="font-size:11px;color:#86868b;">${f.en}</div>
-              </div>
-              <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:${f.on ? 'rgba(48,209,88,.15)' : '#e5e5ea'};color:${f.on ? '#248a3d' : '#86868b'};" id="pfb-income-${k}">${f.on ? 'แสดง' : 'ซ่อน'}</span>
-            </label>`).join('')}
-          </div>
-
-          <!-- Deduct fields -->
-          <div style="font-size:11px;font-weight:700;color:#ff3b30;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">
-            <i class="fas fa-minus-circle" style="margin-right:5px;"></i>เงินหัก (Deductions)
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;" id="pf-deduct">
-            ${Object.entries(payslipFields.deduct).map(([k, f]) => `
-            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:${f.on ? 'rgba(255,59,48,.06)' : '#f5f5f7'};border:1px solid ${f.on ? 'rgba(255,59,48,.25)' : '#e5e5ea'};cursor:pointer;transition:all .15s;" id="pfl-deduct-${k}">
-              <input type="checkbox" id="pfc-deduct-${k}" ${f.on ? 'checked' : ''} onchange="togglePayslipField('deduct','${k}',this.checked)"
-                style="width:16px;height:16px;accent-color:#ff3b30;cursor:pointer;flex-shrink:0;">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:#1d1d1f;">${f.label}</div>
-                <div style="font-size:11px;color:#86868b;">${f.en}</div>
-              </div>
-              <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:${f.on ? 'rgba(255,59,48,.12)' : '#e5e5ea'};color:${f.on ? '#d70015' : '#86868b'};" id="pfb-deduct-${k}">${f.on ? 'แสดง' : 'ซ่อน'}</span>
-            </label>`).join('')}
-          </div>
-
-          <!-- Save button -->
-          <button onclick="savePayslipSettings()"
-            style="width:100%;background:#0071e3;color:#fff;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s;"
-            onmouseover="this.style.background='#0077ed'" onmouseout="this.style.background='#0071e3'"
-            id="save-pf-btn">
-            <i class="fas fa-save"></i> บันทึกการตั้งค่า
+          <button onclick="downloadYearlySummaryTemplate('single')" title="ดาวน์โหลด Excel เฉพาะคนนี้"
+            style="padding:9px 14px;border:1.5px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;display:flex;align-items:center;gap:5px;color:#64748b;transition:all .15s;"
+            onmouseover="this.style.background='#f0fdf4';this.style.borderColor='#16a34a';this.style.color='#16a34a'" onmouseout="this.style.background='#fff';this.style.borderColor='#e5e7eb';this.style.color='#64748b'">
+            <i class="fas fa-file-excel"></i> Excel
+          </button>
+          <button onclick="saveAllYearlySummary()" id="ys-save-btn"
+            style="padding:9px 20px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;">
+            <i class="fas fa-save"></i> บันทึกทั้งหมด
           </button>
         </div>
       </div>
 
-      <!-- ===== RIGHT: Generate + Preview ===== -->
-      <div style="display:flex;flex-direction:column;gap:16px;">
-
-        <!-- Generate card -->
-        <div style="background:#fff;border-radius:18px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07),0 0 0 1px rgba(0,0,0,.05);">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-            <div style="width:28px;height:28px;border-radius:8px;background:rgba(52,199,89,.12);display:flex;align-items:center;justify-content:center;">
-              <i class="fas fa-file-pdf" style="font-size:12px;color:#30d158;"></i>
-            </div>
-            <span style="font-size:14px;font-weight:600;color:#1d1d1f;">ออกสลิปเงินเดือน PDF</span>
-          </div>
-
-          <!-- ===== MONTH/YEAR PICKER ===== -->
-          <div style="margin-bottom:16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <div style="font-size:12px;font-weight:600;color:#86868b;">เลือกเดือน / ปี</div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <button onclick="psChangeYear(-1)"
-                  style="width:26px;height:26px;border:1px solid #e5e5ea;border-radius:8px;background:#f5f5f7;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">&#8249;</button>
-                <span id="ps-year-label" style="font-size:13px;font-weight:700;color:#1d1d1f;min-width:80px;text-align:center;">${parseInt(todayStr.slice(0, 4)) + 543} (${todayStr.slice(0, 4)})</span>
-                <button onclick="psChangeYear(1)"
-                  style="width:26px;height:26px;border:1px solid #e5e5ea;border-radius:8px;background:#f5f5f7;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">&#8250;</button>
-              </div>
-            </div>
-            <div id="ps-month-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:10px;">
-              ${['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'].map((m, i) => {
-        const mm = String(i + 1).padStart(2, '0');
-        const isSelected = todayStr.slice(5, 7) === mm;
-        return `<button id="psmb-${mm}" onclick="psSelectMonth('${mm}')"
-                  style="padding:6px 2px;border:1px solid ${isSelected ? '#0071e3' : '#e5e5ea'};border-radius:8px;background:${isSelected ? '#0071e3' : '#f5f5f7'};color:${isSelected ? '#fff' : '#1d1d1f'};font-size:11px;font-weight:${isSelected ? '700' : '500'};cursor:pointer;font-family:inherit;transition:all .12s;">${m}</button>`;
-      }).join('')}
-            </div>
-            <input type="hidden" id="ps-month" value="${todayStr.slice(0, 7)}">
-          </div>
-          <!-- Employee picker -->
-          <div style="margin-bottom:16px;">
-            <div style="font-size:12px;font-weight:500;color:#86868b;margin-bottom:6px;">พนักงาน</div>
-            <select id="ps-emp"
-              style="width:100%;padding:9px 12px;border:1px solid #e5e5ea;border-radius:10px;font-size:13px;font-family:inherit;outline:none;background:#f5f5f7;cursor:pointer;box-sizing:border-box;">
-              <option value="">-- ทั้งหมด --</option>
-              ${db.employees.map(e => `<option value="${e._key}">${e.name} (${e.dept || '-'})</option>`).join('')}
-            </select>
-          </div>
-
-          <!-- ปุ่มดึงข้อมูล + action -->
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-            <button onclick="fetchAndEditPayslip()"
-              style="flex:1;background:linear-gradient(135deg,#0071e3,#0077ed);color:#fff;border:none;border-radius:12px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;transition:opacity .15s;min-width:160px;"
-              onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'"
-              id="fetch-slip-btn">
-              <i class="fas fa-database"></i> ดึงข้อมูลเงินเดือน
-            </button>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-            <button onclick="previewPayslip()"
-              style="flex:1;background:#f5f5f7;color:#1d1d1f;border:1px solid #e5e5ea;border-radius:12px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"
-              onmouseover="this.style.background='#ebebed'" onmouseout="this.style.background='#f5f5f7'">
-              <i class="fas fa-eye"></i> ดูตัวอย่าง
-            </button>
-            <button onclick="downloadPayslipPDF()"
-              style="flex:2;background:#1d1d1f;color:#fff;border:none;border-radius:12px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"
-              onmouseover="this.style.background='#333'" onmouseout="this.style.background='#1d1d1f'">
-              <i class="fas fa-download"></i> Download PDF
-            </button>
-          </div>
-          <!-- เผยแพร่สลิปให้พนักงาน -->
-          <div style="border-top:1px solid #f1f5f9;padding-top:12px;margin-top:4px;">
-            <button onclick="adminPublishPayslip()"
-              style="width:100%;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;"
-              onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
-              <i class="fas fa-paper-plane"></i> เผยแพร่สลิปให้พนักงาน
-            </button>
-            <div style="font-size:10px;color:#86868b;text-align:center;margin-top:6px;">พนักงานจะเห็นสลิปนี้ได้ทันทีหลังเผยแพร่</div>
-          </div>
-        </div>
-
-        <!-- สลิปที่เผยแพร่แล้ว -->
-        <div style="background:#fff;border-radius:18px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07),0 0 0 1px rgba(0,0,0,.05);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <div style="width:28px;height:28px;border-radius:8px;background:rgba(22,163,74,.1);display:flex;align-items:center;justify-content:center;">
-                <i class="fas fa-check-circle" style="font-size:12px;color:#16a34a;"></i>
-              </div>
-              <span style="font-size:14px;font-weight:600;color:#1d1d1f;">สลิปที่เผยแพร่แล้ว</span>
-            </div>
-            <button onclick="loadPublishedPayslips()" style="font-size:11px;color:#0071e3;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;"><i class="fas fa-sync mr-1"></i>รีเฟรช</button>
-          </div>
-          <div id="admin-published-list" style="min-height:60px;">
-            <div style="text-align:center;padding:20px;color:#94a3b8;font-size:12px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>
-          </div>
-        </div>
-
-        <!-- ===== EDITABLE PAYSLIP TABLE ===== -->
-        <div id="ps-edit-table-area" style="display:none;"></div>
-
-        <!-- Upload / Import section -->
-        <div style="background:#fff;border-radius:18px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.07),0 0 0 1px rgba(0,0,0,.05);">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:28px;height:28px;border-radius:8px;background:rgba(191,90,242,.1);display:flex;align-items:center;justify-content:center;">
-              <i class="fas fa-upload" style="font-size:12px;color:#bf5af2;"></i>
-            </div>
-            <span style="font-size:14px;font-weight:600;color:#1d1d1f;">นำเข้าสลิปแบบฟอร์ม (Import Form)</span>
-          </div>
-          <div style="font-size:12px;color:#86868b;margin-bottom:14px;">อัปโหลดไฟล์ Excel (.xlsx) หรือ CSV เพื่อนำเข้าข้อมูลสลิปแบบกำหนดเอง</div>
-          <div id="ps-upload-zone"
-            style="border:2px dashed #d1d1d6;border-radius:14px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:#fafafa;"
-            onclick="document.getElementById('ps-file-input').click()"
-            ondragover="event.preventDefault();this.style.borderColor='#bf5af2';this.style.background='#fdf5ff';"
-            ondragleave="this.style.borderColor='#d1d1d6';this.style.background='#fafafa';"
-            ondrop="handlePayslipDrop(event)">
-            <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#bf5af2;margin-bottom:8px;display:block;"></i>
-            <div style="font-size:13px;font-weight:600;color:#1d1d1f;">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</div>
-            <div style="font-size:11px;color:#86868b;margin-top:4px;">รองรับ .xlsx, .csv</div>
-          </div>
-          <input type="file" id="ps-file-input" accept=".xlsx,.csv" style="display:none;" onchange="handlePayslipUpload(this)">
-          <div id="ps-upload-result" style="margin-top:12px;display:none;"></div>
-
-          <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-            <button onclick="downloadPayslipTemplate()"
-              style="flex:1;background:#f5f5f7;color:#1d1d1f;border:1px solid #e5e5ea;border-radius:12px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"
-              onmouseover="this.style.background='#ebebed'" onmouseout="this.style.background='#f5f5f7'">
-              <i class="fas fa-file-excel" style="color:#30d158;"></i> Download Template
-            </button>
-          </div>
-        </div>
-
-        <!-- Preview area -->
-        <div id="ps-preview-area" style="display:none;"></div>
-
+      <!-- Table -->
+      <div style="overflow-x:auto;border:1.5px solid #e5e7eb;border-radius:14px;background:#fff;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1050px;" id="ys-table">
+          <thead>
+            <tr style="background:linear-gradient(135deg,#15803d,#16a34a);">
+              <th style="padding:12px 10px;text-align:left;color:#fff;font-size:12px;font-weight:700;border-right:1px solid rgba(255,255,255,.15);white-space:nowrap;">เดือน</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">เงินเดือน/ค่าแรง</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">OT</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">โบนัส</th>
+              <th style="padding:12px 6px;text-align:center;color:#e2ffe8;font-size:11px;font-weight:700;border-right:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.1);">รวมเงินได้</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">ภาษี</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">ประกันสังคม</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:11px;font-weight:600;border-right:1px solid rgba(255,255,255,.15);">หักอื่นๆ</th>
+              <th style="padding:12px 6px;text-align:center;color:#ffd6d6;font-size:11px;font-weight:700;border-right:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.1);">รวมเงินหัก</th>
+              <th style="padding:12px 6px;text-align:center;color:#fef08a;font-size:11px;font-weight:800;border-right:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.15);">เงินสุทธิ</th>
+              <th style="padding:12px 6px;text-align:center;color:#bbf7d0;font-size:10px;font-weight:700;border-right:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);">รายได้สะสม</th>
+              <th style="padding:12px 6px;text-align:center;color:#bbf7d0;font-size:10px;font-weight:700;border-right:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);">ปกส.สะสม</th>
+              <th style="padding:12px 6px;text-align:center;color:#fff;font-size:10px;font-weight:700;">เผยแพร่</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${months.map((r, idx) => {
+              const bg = idx % 2 === 0 ? '#fff' : '#f8faf9';
+              return `<tr style="background:${bg};border-bottom:1px solid #f1f5f9;" data-ym="${r.ymKey}">
+                <td style="padding:10px 10px;font-weight:700;color:#1e293b;white-space:nowrap;border-right:1px solid #f1f5f9;font-size:13px;">
+                  <span style="color:#16a34a;font-size:11px;margin-right:4px;font-weight:800;">${r.mm}</span>${r.monthTH}
+                </td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.base || ''}" data-field="base" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.ot || ''}" data-field="ot" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.bonus || ''}" data-field="bonus" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:8px 8px;text-align:right;font-weight:800;color:#1d4ed8;background:rgba(59,130,246,.04);border-right:1px solid #f1f5f9;font-size:13px;" data-sum="income" data-ym="${r.ymKey}">${F(r.income)}</td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.tax || ''}" data-field="tax" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#dc2626'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.sso || ''}" data-field="sso" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#dc2626'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:3px 4px;border-right:1px solid #f1f5f9;">
+                  <input type="number" step="0.01" min="0" value="${r.other || ''}" data-field="other" data-ym="${r.ymKey}" onchange="ysFieldChanged()" onfocus="this.style.borderColor='#dc2626'" onblur="this.style.borderColor='#e2e8f0'" style="${iS}" placeholder="0">
+                </td>
+                <td style="padding:8px 8px;text-align:right;font-weight:800;color:#dc2626;background:rgba(239,68,68,.03);border-right:1px solid #f1f5f9;font-size:13px;" data-sum="deduct" data-ym="${r.ymKey}">${F(r.deduct)}</td>
+                <td style="padding:8px 8px;text-align:right;font-weight:900;color:#15803d;background:rgba(22,163,74,.05);border-right:1px solid #f1f5f9;font-size:14px;" data-sum="net" data-ym="${r.ymKey}">${F(r.net)}</td>
+                <td style="padding:8px 6px;text-align:right;font-weight:700;color:#0369a1;background:rgba(3,105,161,.04);border-right:1px solid #f1f5f9;font-size:11px;" data-sum="ytdIncome" data-ym="${r.ymKey}">${F(r.ytdIncome)}</td>
+                <td style="padding:8px 6px;text-align:right;font-weight:700;color:#0369a1;background:rgba(3,105,161,.04);border-right:1px solid #f1f5f9;font-size:11px;" data-sum="ytdSso" data-ym="${r.ymKey}">${F(r.ytdSso)}</td>
+                <td style="padding:4px 6px;text-align:center;border-right:none;">
+                  <button onclick="psPublishMonth('${empKey}','${r.ymKey}','${r.ym}',this)"
+                    style="padding:5px 10px;border:none;border-radius:8px;font-size:10px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;transition:all .15s;${r.isPublished
+                      ? 'background:#dcfce7;color:#15803d;'
+                      : 'background:#f1f5f9;color:#64748b;'}"
+                    title="${r.isPublished ? 'เผยแพร่แล้ว (กดเพื่อยกเลิก)' : 'กดเพื่อเผยแพร่สลิปเดือนนี้'}">
+                    ${r.isPublished ? '<i class="fas fa-check-circle"></i>' : '<i class="far fa-paper-plane"></i>'}
+                  </button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#1e293b;color:#fff;font-weight:800;">
+              <td style="padding:12px 10px;font-size:13px;font-weight:800;">รวมทั้งปี</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-base">${F(months.reduce((s, r) => s + r.base, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-ot">${F(months.reduce((s, r) => s + r.ot, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-bonus">${F(months.reduce((s, r) => s + r.bonus, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:13px;color:#93c5fd;" id="ys-foot-income">${F(months.reduce((s, r) => s + r.income, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-tax">${F(months.reduce((s, r) => s + r.tax, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-sso">${F(months.reduce((s, r) => s + r.sso, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:12px;" id="ys-foot-other">${F(months.reduce((s, r) => s + r.other, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:13px;color:#fca5a5;" id="ys-foot-deduct">${F(months.reduce((s, r) => s + r.deduct, 0))}</td>
+              <td style="padding:10px 6px;text-align:right;font-size:14px;color:#86efac;" id="ys-foot-net">${F(months.reduce((s, r) => s + r.net, 0))}</td>
+              <td style="padding:10px 6px;" colspan="3"></td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
-    </div>
-  </div>`;
-      loadPublishedPayslips();
+      <div style="font-size:10px;color:#94a3b8;margin-top:8px;display:flex;align-items:center;gap:6px;">
+        <i class="fas fa-info-circle"></i>
+        แก้ไขตัวเลขได้โดยตรง · ยอดรวม/สะสมคำนวณอัตโนมัติ · กด "บันทึกทั้งหมด" เพื่อเซฟ · <i class="fas fa-check-circle" style="color:#16a34a;margin:0 2px;"></i> = เผยแพร่แล้ว
+      </div>`;
+
+      // store empKey for save
+      document.getElementById('ys-table').dataset.empKey = empKey;
     }
+
+    // ---- กลับไปหน้ารายชื่อ ----
+    window.psBackToList = function () {
+      document.getElementById('ps-emp-list-section').style.display = '';
+      document.getElementById('ps-detail-section').style.display = 'none';
+    };
+
+    // ---- เปลี่ยนปีในหน้า detail ----
+    window.psDetailChangeYear = function (delta, empKey) {
+      _ysYear += delta;
+      const lbl = document.getElementById('ps-detail-year');
+      if (lbl) lbl.textContent = _ysYear + 543;
+      psOpenEmployee(empKey);
+    };
+
+    // ---- เผยแพร่/ยกเลิกเผยแพร่สลิปรายเดือน ----
+    window.psPublishMonth = async function (empKey, ymKey, ym, btn) {
+      const emp = db.employees.find(e => e._key === empKey);
+      if (!emp) return;
+
+      // ตรวจว่าเผยแพร่แล้วหรือยัง
+      const existing = await fbGet(`/publishedPayslips/${empKey}/${ymKey}`).catch(() => null);
+
+      if (existing) {
+        // ยกเลิกเผยแพร่
+        if (!confirm(`ยกเลิกเผยแพร่สลิป ${ym} ของ "${emp.name}" ?`)) return;
+        await fbDelete(`/publishedPayslips/${empKey}/${ymKey}`).catch(() => { });
+        btn.innerHTML = '<i class="far fa-paper-plane"></i>';
+        btn.style.background = '#f1f5f9';
+        btn.style.color = '#64748b';
+        btn.title = 'กดเพื่อเผยแพร่สลิปเดือนนี้';
+        return;
+      }
+
+      // เผยแพร่ใหม่ — ดึงข้อมูลจาก input ในแถวนั้น
+      const table = document.getElementById('ys-table');
+      const tr = table?.querySelector(`tr[data-ym="${ymKey}"]`);
+      if (!tr) return;
+
+      const getVal = (field) => parseFloat(tr.querySelector(`input[data-field="${field}"]`)?.value) || 0;
+      const base = getVal('base'), ot = getVal('ot'), bonus = getVal('bonus');
+      const tax = getVal('tax'), sso = getVal('sso'), other = getVal('other');
+      const income = base + ot + bonus;
+      const deduct = tax + sso + other;
+      const net = income - deduct;
+
+      if (income === 0 && deduct === 0) {
+        alert('ยังไม่มีข้อมูลเงินเดือนเดือนนี้ กรุณากรอกข้อมูลก่อน');
+        return;
+      }
+
+      const [y, m] = ym.split('-');
+      const monthTH = _YS_MONTHS_TH[parseInt(m) - 1];
+      const periodStr = monthTH + ' ' + (parseInt(y) + 543);
+
+      const payload = {
+        empId: empKey, empName: emp.name, dept: emp.dept || '',
+        ym, periodStr,
+        base, ot, bonus, food: 0, incentive: 0, travel: 0, phone: 0,
+        tax, sso, absent: 0, advances: other,
+        totalIncome: income, totalDeduct: deduct, net,
+        publishedAt: Date.now(),
+        publishedBy: CU.displayName || CU.id
+      };
+
+      await fbSet(`/publishedPayslips/${empKey}/${ymKey}`, payload);
+      btn.innerHTML = '<i class="fas fa-check-circle"></i>';
+      btn.style.background = '#dcfce7';
+      btn.style.color = '#15803d';
+      btn.title = 'เผยแพร่แล้ว (กดเพื่อยกเลิก)';
+
+      // flash animation
+      btn.style.transform = 'scale(1.3)';
+      setTimeout(() => { btn.style.transform = 'scale(1)'; }, 300);
+    };
 
     // =====================================================================
     //  PAYSLIP PUBLISH SYSTEM
@@ -16115,6 +16385,266 @@ async function handle(req) {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       });
       XLSX.writeFile(wb, `payslip_template_${curYear}.xlsx`);
+    };
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  สรุปเงินเดือนรายปี (Yearly Payslip Summary)
+    //  แอดมินกรอก/แก้ไขรายเดือน + ยอดสะสมทั้งปี + ประกันสังคมสะสม
+    //  Firebase path: /payslipYearly/{empKey}/{YYYY-MM}
+    // ══════════════════════════════════════════════════════════════════════
+    let _ysYear = parseInt(todayStr.slice(0, 4));
+    const _YS_MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+    window.ysChangeYear = function (delta) {
+      _ysYear += delta;
+      const lbl = document.getElementById('ys-year-label') || document.getElementById('ps-detail-year');
+      if (lbl) lbl.textContent = _ysYear + 543;
+    };
+
+    // Legacy: loadYearlySummary — redirect ไปใช้ระบบใหม่ (สำหรับ uploadYearlySummary)
+    window.loadYearlySummary = async function () {
+      // ถ้าอยู่ในหน้า detail → reload
+      const empKey = document.getElementById('ys-table')?.dataset?.empKey;
+      if (empKey) { psOpenEmployee(empKey); return; }
+    };
+
+    // (old yearly summary HTML removed — replaced by psOpenEmployee)
+
+    // เมื่อแก้ไขช่องใดก็ตาม → คำนวณยอดรวม + ยอดสะสมใหม่ทันที
+    window.ysFieldChanged = function () {
+      const table = document.getElementById('ys-table');
+      if (!table) return;
+      const F = v => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      let ytdIncome = 0, ytdSso = 0;
+      let totBase = 0, totOt = 0, totBonus = 0, totIncome = 0, totTax = 0, totSso = 0, totOther = 0, totDeduct = 0, totNet = 0;
+
+      const rows = table.querySelectorAll('tbody tr');
+      rows.forEach(tr => {
+        const ym = tr.dataset.ym;
+        const getVal = (field) => parseFloat(tr.querySelector(`input[data-field="${field}"]`)?.value) || 0;
+        const base = getVal('base');
+        const ot = getVal('ot');
+        const bonus = getVal('bonus');
+        const tax = getVal('tax');
+        const sso = getVal('sso');
+        const other = getVal('other');
+        const income = base + ot + bonus;
+        const deduct = tax + sso + other;
+        const net = income - deduct;
+        ytdIncome += income;
+        ytdSso += sso;
+
+        // อัปเดตยอดรวมในแถว
+        const setCell = (name, val) => { const el = tr.querySelector(`[data-sum="${name}"]`); if (el) el.textContent = F(val); };
+        setCell('income', income);
+        setCell('deduct', deduct);
+        setCell('net', net);
+        setCell('ytdIncome', ytdIncome);
+        setCell('ytdSso', ytdSso);
+
+        totBase += base; totOt += ot; totBonus += bonus;
+        totIncome += income; totTax += tax; totSso += sso;
+        totOther += other; totDeduct += deduct; totNet += net;
+      });
+
+      // อัปเดต footer
+      const setFoot = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = F(val); };
+      setFoot('ys-foot-base', totBase); setFoot('ys-foot-ot', totOt); setFoot('ys-foot-bonus', totBonus);
+      setFoot('ys-foot-income', totIncome); setFoot('ys-foot-tax', totTax); setFoot('ys-foot-sso', totSso);
+      setFoot('ys-foot-other', totOther); setFoot('ys-foot-deduct', totDeduct); setFoot('ys-foot-net', totNet);
+    };
+
+    // บันทึกข้อมูลทั้ง 12 เดือนลง Firebase
+    window.saveAllYearlySummary = async function () {
+      const empKey = document.getElementById('ys-table')?.dataset?.empKey || document.getElementById('ys-emp')?.value;
+      if (!empKey) { alert('กรุณาเลือกพนักงาน'); return; }
+      const table = document.getElementById('ys-table');
+      if (!table) return;
+
+      const btn = document.getElementById('ys-save-btn');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังบันทึก...';
+      btn.disabled = true;
+
+      try {
+        const rows = table.querySelectorAll('tbody tr');
+        const updates = {};
+        rows.forEach(tr => {
+          const ym = tr.dataset.ym;
+          const getVal = (field) => parseFloat(tr.querySelector(`input[data-field="${field}"]`)?.value) || 0;
+          const base = getVal('base'), ot = getVal('ot'), bonus = getVal('bonus');
+          const tax = getVal('tax'), sso = getVal('sso'), other = getVal('other');
+          const income = base + ot + bonus;
+          const deduct = tax + sso + other;
+          // บันทึกเฉพาะเดือนที่มีข้อมูล (ไม่บันทึกเดือนว่าง)
+          if (income > 0 || deduct > 0) {
+            updates[ym] = {
+              base, ot, bonus, income,
+              tax, sso, other, deduct,
+              net: income - deduct,
+              updatedAt: Date.now(),
+              updatedBy: CU.displayName || CU.id
+            };
+          }
+        });
+
+        // บันทึกลง Firebase ทีเดียว
+        await fbSet(`/payslipYearly/${empKey}`, { ...((await fbGet(`/payslipYearly/${empKey}`).catch(() => null)) || {}), ...updates });
+
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> บันทึกแล้ว!';
+        btn.style.background = '#16a34a';
+        setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.disabled = false; }, 2500);
+      } catch (e) {
+        alert('บันทึกไม่สำเร็จ: ' + e.message);
+        btn.innerHTML = orig; btn.disabled = false;
+      }
+    };
+
+    // ดาวน์โหลด Template Excel สำหรับสรุปเงินเดือนรายปี
+    // ★ ดาวน์โหลด Template — รองรับทุกคน (1 ชีต) หรือเฉพาะคน (แยกชีต)
+    window.downloadYearlySummaryTemplate = async function (mode) {
+      const year = _ysYear;
+      // ถ้าอยู่หน้า detail → ดึงเฉพาะคนนั้น พร้อมข้อมูลจริง
+      const detailKey = document.getElementById('ys-table')?.dataset?.empKey;
+      const singleEmp = (mode === 'single' && detailKey) ? detailKey : null;
+
+      const employees = singleEmp
+        ? db.employees.filter(e => e._key === singleEmp)
+        : (db.employees.length ? db.employees : [{ _key: 'EMP001', name: 'ตัวอย่าง' }]);
+
+      const wb = XLSX.utils.book_new();
+      const headers = ['emp_id', 'emp_name', 'month', 'period', 'base', 'ot', 'bonus', 'income', 'tax', 'sso', 'other', 'deduct', 'net'];
+      const headersTH = ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'เดือน', 'งวด(YYYY-MM)', 'เงินเดือน/ค่าแรง', 'OT', 'โบนัส', 'รวมเงินได้', 'ภาษี', 'ประกันสังคม', 'หักอื่นๆ', 'รวมเงินหัก', 'เงินสุทธิ'];
+
+      if (singleEmp) {
+        // ── โหมดรายบุคคล: 1 ชีต พร้อมข้อมูลจริงจาก Firebase ──
+        const emp = employees[0] || {};
+        let data = {};
+        try { data = (await fbGet(`/payslipYearly/${singleEmp}`)) || {}; } catch (_) { }
+        const rows = [headers, headersTH];
+        for (let m = 1; m <= 12; m++) {
+          const mm = String(m).padStart(2, '0');
+          const ymKey = `${year}_${mm}`;
+          const s = data[ymKey] || {};
+          const base = parseFloat(s.base) || 0, ot = parseFloat(s.ot) || 0, bonus = parseFloat(s.bonus) || 0;
+          const tax = parseFloat(s.tax) || 0, sso = parseFloat(s.sso) || 0, other = parseFloat(s.other) || 0;
+          rows.push([emp._key || '', emp.name || '', _YS_MONTHS_TH[m - 1], `${year}-${mm}`, base, ot, bonus, base + ot + bonus, tax, sso, other, tax + sso + other, (base + ot + bonus) - (tax + sso + other)]);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+        XLSX.utils.book_append_sheet(wb, ws, (emp.name || 'Employee').replace(/[\/*?:\[\]]/g, '').slice(0, 28));
+        XLSX.writeFile(wb, `payslip_${emp.name || singleEmp}_${year}.xlsx`);
+
+      } else {
+        // ── โหมดทุกคน: ชีต "ทุกคน" (1 ชีตรวม) + แยกชีตรายบุคคล ──
+        // โหลดข้อมูลทุกคนจาก Firebase
+        let allData = {};
+        try { allData = (await fbGet('/payslipYearly')) || {}; } catch (_) { }
+
+        // ชีตที่ 1: รวมทุกคน
+        const allRows = [headers, headersTH];
+        employees.forEach(emp => {
+          const empData = allData[emp._key] || {};
+          for (let m = 1; m <= 12; m++) {
+            const mm = String(m).padStart(2, '0');
+            const ymKey = `${year}_${mm}`;
+            const s = empData[ymKey] || {};
+            const base = parseFloat(s.base) || 0, ot = parseFloat(s.ot) || 0, bonus = parseFloat(s.bonus) || 0;
+            const tax = parseFloat(s.tax) || 0, sso = parseFloat(s.sso) || 0, other = parseFloat(s.other) || 0;
+            allRows.push([emp._key || '', emp.name || '', _YS_MONTHS_TH[m - 1], `${year}-${mm}`, base, ot, bonus, base + ot + bonus, tax, sso, other, tax + sso + other, (base + ot + bonus) - (tax + sso + other)]);
+          }
+        });
+        const wsAll = XLSX.utils.aoa_to_sheet(allRows);
+        wsAll['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+        XLSX.utils.book_append_sheet(wb, wsAll, 'ทุกคน');
+
+        // ชีตรายบุคคล
+        employees.forEach(emp => {
+          const empData = allData[emp._key] || {};
+          const rows = [headers, headersTH];
+          for (let m = 1; m <= 12; m++) {
+            const mm = String(m).padStart(2, '0');
+            const ymKey = `${year}_${mm}`;
+            const s = empData[ymKey] || {};
+            const base = parseFloat(s.base) || 0, ot = parseFloat(s.ot) || 0, bonus = parseFloat(s.bonus) || 0;
+            const tax = parseFloat(s.tax) || 0, sso = parseFloat(s.sso) || 0, other = parseFloat(s.other) || 0;
+            rows.push([emp._key || '', emp.name || '', _YS_MONTHS_TH[m - 1], `${year}-${mm}`, base, ot, bonus, base + ot + bonus, tax, sso, other, tax + sso + other, (base + ot + bonus) - (tax + sso + other)]);
+          }
+          const ws = XLSX.utils.aoa_to_sheet(rows);
+          ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+          const sheetName = (emp.name || emp._key || 'emp').replace(/[\/*?:\[\]]/g, '').slice(0, 28) || 'Employee';
+          XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        });
+
+        XLSX.writeFile(wb, `payslip_all_${year}.xlsx`);
+      }
+    };
+
+    // อัปโหลด Excel สรุปเงินเดือนรายปี — รองรับทั้งชีตรวม "ทุกคน" และชีตรายบุคคล
+    window.uploadYearlySummary = function (input) {
+      const file = input?.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async function (ev) {
+        try {
+          showSync();
+          const wb = XLSX.read(ev.target.result, { type: 'array' });
+          let importCount = 0;
+          const empSet = new Set(); // track unique employees imported
+
+          for (const sName of wb.SheetNames) {
+            const ws = wb.Sheets[sName];
+            const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            if (raw.length < 3) continue;
+            const headers = raw[0].map(h => String(h).trim());
+            const dataRows = raw.slice(2).filter(r => r.some(c => c !== ''));
+
+            for (const row of dataRows) {
+              const obj = Object.fromEntries(headers.map((h, i) => [h, row[i]]));
+              const empId = String(obj.emp_id || '').trim();
+              const period = String(obj.period || '').trim(); // YYYY-MM
+              if (!empId || !period || !period.match(/^\d{4}-\d{2}$/)) continue;
+
+              // หาพนักงานจาก key, ชื่อ, หรือ scanner id
+              const emp = db.employees.find(e => e._key === empId || e.name === empId || e.scannerEmpId === empId);
+              const key = emp ? emp._key : empId;
+              const ymKey = period.replace('-', '_');
+
+              const base = parseFloat(obj.base) || 0;
+              const ot = parseFloat(obj.ot) || 0;
+              const bonus = parseFloat(obj.bonus) || 0;
+              const tax = parseFloat(obj.tax) || 0;
+              const sso = parseFloat(obj.sso) || 0;
+              const other = parseFloat(obj.other) || 0;
+              const income = base + ot + bonus;
+              const deduct = tax + sso + other;
+
+              if (income > 0 || deduct > 0) {
+                await fbSet(`/payslipYearly/${key}/${ymKey}`, {
+                  base, ot, bonus, income,
+                  tax, sso, other, deduct,
+                  net: income - deduct,
+                  updatedAt: Date.now(),
+                  updatedBy: CU.displayName || CU.id
+                });
+                importCount++;
+                empSet.add(emp?.name || key);
+              }
+            }
+          }
+
+          hideSync();
+          alert(`✅ นำเข้าสำเร็จ\n\n📊 ${importCount} รายการ จาก ${empSet.size} คน\n👥 ${[...empSet].slice(0, 10).join(', ')}${empSet.size > 10 ? ` ...+${empSet.size - 10} คน` : ''}`);
+          // รีโหลดตาราง
+          loadYearlySummary();
+        } catch (e) {
+          hideSync();
+          alert('อ่านไฟล์ไม่สำเร็จ: ' + e.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      input.value = ''; // reset
     };
 
     window.handlePayslipDrop = function (e) {
@@ -17397,11 +17927,17 @@ async function handle(req) {
     // =====================================================================
     async function scanInitLocation() {
       // โหลด default location จาก Firebase
+      const sel = document.getElementById('scan-location-sel');
       try {
         const saved = await fbGet('/settings/scannerDefaultLocation');
-        const sel = document.getElementById('scan-location-sel');
         if (sel && saved) { sel.value = saved; }
       } catch (_) { }
+
+      // ★ ถ้าไม่มี default → ใช้ Yard ระยอง อัตโนมัติ
+      if (sel && !sel.value) {
+        const ryLoc = _findRayongYard();
+        if (ryLoc) sel.value = ryLoc.id;
+      }
       scanUpdateLocInfo();
     }
 
@@ -17534,11 +18070,111 @@ async function handle(req) {
       } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
     };
 
+    // ---- Smart Location Matcher สำหรับสแกนนิ้ว ----
+    // รองรับหลายรูปแบบ: "ระยอง ยาร์ด", "Rayong yard", "ระยอง", "rayong_yard" ฯลฯ
+    function _normalizeLocName(s) {
+      return String(s || '').toLowerCase()
+        .replace(/[\s_\-\.]+/g, '')      // ลบ space, _, -, .
+        .replace(/yard/gi, 'ยาร์ด')      // English → Thai common aliases
+        .replace(/rayong/gi, 'ระยอง')
+        .replace(/bangkok/gi, 'กรุงเทพ')
+        .replace(/chonburi/gi, 'ชลบุรี')
+        .replace(/nakhon/gi, 'นคร')
+        .replace(/pattaya/gi, 'พัทยา')
+        .replace(/laem\s*chabang/gi, 'แหลมฉบัง')
+        .replace(/siracha|sriracha/gi, 'ศรีราชา')
+        .replace(/nong.*yai.*bu/gi, 'หนองยายบู่')
+        .replace(/office/gi, 'ออฟฟิศ')
+        .replace(/warehouse/gi, 'คลังสินค้า')
+        .replace(/site/gi, 'ไซต์')
+        .trim();
+    }
+
+    /** match ชื่อไฟล์/ข้อความ กับ gpsLocations — คืน location ที่ match ดีที่สุดหรือ null */
+    function _smartMatchLocation(text) {
+      if (!text || !gpsLocations.length) return null;
+      const norm = _normalizeLocName(text);
+      if (!norm) return null;
+
+      let bestLoc = null, bestScore = 0;
+
+      for (const loc of gpsLocations) {
+        // รวมชื่อหลัก + aliases เข้าเป็น candidate list
+        const candidates = [loc.name || ''];
+        if (loc.aliases) {
+          if (Array.isArray(loc.aliases)) candidates.push(...loc.aliases);
+          else if (typeof loc.aliases === 'string') candidates.push(...loc.aliases.split(',').map(s => s.trim()));
+        }
+
+        for (const c of candidates) {
+          const cn = _normalizeLocName(c);
+          if (!cn) continue;
+
+          let score = 0;
+          // Exact match
+          if (norm === cn || norm.includes(cn) || cn.includes(norm)) {
+            score = Math.max(cn.length, norm.length);
+          }
+          // Partial token match
+          if (!score) {
+            const tokens = cn.split(/(?=[ก-ฮa-z])/i).filter(Boolean);
+            const matched = tokens.filter(t => t.length > 1 && norm.includes(t));
+            if (matched.length > 0) score = matched.join('').length * 0.5;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestLoc = loc;
+          }
+        }
+      }
+
+      return bestScore >= 2 ? bestLoc : null;
+    }
+
     // ---- Scanner upload functions ----
     window._scanParsed = []; // parsed rows [{empId, date, checkIn, checkOut}]
 
+    // ★ หา location "Yard ระยอง" หรือที่มีชื่อคล้าย — ใช้เป็น default สำหรับ scanner
+    function _findRayongYard() {
+      const norm = s => (s || '').toLowerCase().replace(/[\s_\-\.]/g, '');
+      return gpsLocations.find(l => {
+        const n = norm(l.name);
+        if (n.includes('ระยอง') || n.includes('rayong') || n.includes('ยาร์ด') || n.includes('yard')) return true;
+        if (l.aliases && l.aliases.some(a => { const na = norm(a); return na.includes('ระยอง') || na.includes('rayong') || na.includes('ยาร์ด') || na.includes('yard'); })) return true;
+        return false;
+      }) || null;
+    }
+
     window.scanHandleFile = function (file) {
       if (!file) return;
+
+      const sel = document.getElementById('scan-location-sel');
+
+      // ★ Auto-detect สถานที่จากชื่อไฟล์
+      const matched = _smartMatchLocation(file.name);
+      if (matched && sel) {
+        sel.value = matched.id;
+        scanUpdateLocInfo();
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#312e81;color:#fff;padding:10px 20px;border-radius:12px;font-size:13px;font-weight:700;z-index:99999;box-shadow:0 4px 16px rgba(49,46,129,.4);font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:8px;';
+        toast.innerHTML = `<i class="fas fa-map-marker-alt" style="color:#a5b4fc;"></i>พบสถานที่จากชื่อไฟล์: <span style="color:#c7d2fe;">${matched.name}</span>`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+      } else if (sel && !sel.value) {
+        // ★ ไม่พบจากชื่อไฟล์ → ตั้งเป็น Yard ระยอง อัตโนมัติ
+        const ryLoc = _findRayongYard();
+        if (ryLoc) {
+          sel.value = ryLoc.id;
+          scanUpdateLocInfo();
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#0e7490;color:#fff;padding:10px 20px;border-radius:12px;font-size:13px;font-weight:700;z-index:99999;box-shadow:0 4px 16px rgba(14,116,144,.4);font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:8px;';
+          toast.innerHTML = `<i class="fas fa-map-marker-alt" style="color:#67e8f9;"></i>ตั้งสถานที่อัตโนมัติ: <span style="color:#a5f3fc;">${ryLoc.name}</span>`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3500);
+        }
+      }
+
       const reader = new FileReader();
       reader.onload = function (e) {
         const text = e.target.result;
@@ -17645,9 +18281,23 @@ async function handle(req) {
       // ── location ────────────────────────────────────────────────────────
       const mode = 'smart'; // อัตโนมัติเสมอ
       const locSel = document.getElementById('scan-location-sel');
-      const locId = locSel?.value || '';
-      const loc = gpsLocations.find(l => l.id === locId);
-      const locName = loc?.name || 'ไม่ระบุ';
+      let locId = locSel?.value || '';
+      let loc = gpsLocations.find(l => l.id === locId);
+
+      // ★ สแกนนิ้ว → บังคับใช้ Yard ระยอง เสมอ
+      if (!locId || !loc) {
+        const ryLoc = _findRayongYard();
+        if (ryLoc) {
+          locId = ryLoc.id;
+          loc = ryLoc;
+          if (locSel) { locSel.value = ryLoc.id; scanUpdateLocInfo(); }
+        } else {
+          // ไม่มี location ใน gpsLocations → ใช้ชื่อตรงๆ
+          locId = 'rayong';
+          loc = null;
+        }
+      }
+      const locName = loc?.name || 'ระยอง';
 
       const btn = document.getElementById('scan-import-btn');
       btn.disabled = true;
@@ -17700,15 +18350,26 @@ async function handle(req) {
             let action = 'ข้ามแล้ว (มีครบ)';
             let changed = false;
 
+            // ★ อัพเดท location ถ้ายังไม่มี
+            if (!existingRec.locationName && locName) {
+              updates.locationId = locId;
+              updates.locationName = locName;
+              changed = true;
+            }
+
             if (r.checkIn && !existingRec.checkInTime) {
               updates.checkInTime = r.checkIn;
               updates.source = 'scanner'; updates.scanEmpId = r.empId;
+              updates.locationId = locId;
+              updates.locationName = locName;
               changed = true; mergedIn++;
               action = `เพิ่มเวลาเข้า ${r.checkIn}`;
             }
             if (r.checkOut && !existingRec.checkOutTime) {
               updates.checkOutTime = r.checkOut;
               if (!updates.source) updates.source = 'scanner';
+              updates.locationId = locId;
+              updates.locationName = locName;
               changed = true; mergedOut++;
               action = action.startsWith('เพิ่มเวลาเข้า')
                 ? `เพิ่มเวลาเข้า ${r.checkIn} + ออก ${r.checkOut}`
