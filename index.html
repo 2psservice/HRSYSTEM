@@ -1704,7 +1704,7 @@
     const todayStr = (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
     let CU = null;
     let qrTimer = null, qrExp = null, camStream = null, camScanning = false;
-    const LIFF_ID = "2009433327-VKasKnDi";
+    const LIFF_ID = "YOUR_LIFF_ID_HERE";
     let pendingLineUid = null;
     let hrGPS = { lat: 13.756331, lng: 100.501827, radius: 100 }; // legacy single-loc fallback
     let gpsLocations = []; // array of {id,name,lat,lng,radius}
@@ -6147,36 +6147,465 @@
       const months = getMonths();
       const mOpts = months.map(m => `<option value="${m.v}">${m.l}</option>`).join('');
       mc.innerHTML = `
-  <div class="bg-white rounded-xl shadow-sm p-5 mb-5">
-    <h3 class="text-base font-bold text-gray-700 border-l-4 border-blue-500 pl-3 mb-4">ประวัติรายบุคคล</h3>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div class="md:col-span-2">
-        <label class="text-xs font-semibold text-gray-500 block mb-1">ค้นหาพนักงาน</label>
-        <div style="position:relative;">
-          <i class="fas fa-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none;"></i>
-          <input id="re-search" type="text" placeholder="พิมพ์ชื่อ, สายงาน, หรือหัวหน้างาน..."
-            class="w-full border border-gray-300 rounded-lg py-2.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-            style="padding-left:34px;"
-            oninput="filterEmpRptList(this.value)" autocomplete="off">
-          <div id="re-search-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:200;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.10);max-height:260px;overflow-y:auto;margin-top:4px;"></div>
-        </div>
-      </div>
-      <div>
-        <label class="text-xs font-semibold text-gray-500 block mb-1">เดือน</label>
-        <select id="re-mon" class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none">${mOpts}</select>
-      </div>
-    </div>
-    <div id="re-selected" style="display:none;margin-top:12px;"></div>
-    <input type="hidden" id="re-emp" value="">
-    <div class="mt-4">
-      <button onclick="loadEmpRpt()"
-        class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-sm transition flex items-center gap-2">
-        <i class="fas fa-search"></i> ดูประวัติ
+  <div style="max-width:1100px;margin:0 auto;padding:0 0 60px;">
+    <!-- Sub-tab bar -->
+    <div style="display:flex;gap:4px;background:#e5e7eb;border-radius:12px;padding:4px;margin-bottom:20px;width:fit-content;">
+      <button onclick="reShowSubTab('search')" id="re-sub-search" style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:#fff;color:#1d4ed8;box-shadow:0 1px 4px rgba(0,0,0,.1);">
+        <i class="fas fa-search mr-2"></i>ค้นหารายบุคคล
+      </button>
+      <button onclick="reShowSubTab('summary')" id="re-sub-summary" style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-chart-bar mr-2"></i>สรุปภาพรวมพนักงาน
       </button>
     </div>
-  </div>
-  <div id="re-area"></div>`;
+
+    <!-- Tab 1: ค้นหารายบุคคล -->
+    <div id="re-pane-search">
+      <div class="bg-white rounded-xl shadow-sm p-5 mb-5">
+        <h3 class="text-base font-bold text-gray-700 border-l-4 border-blue-500 pl-3 mb-4">ประวัติรายบุคคล</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="md:col-span-2">
+            <label class="text-xs font-semibold text-gray-500 block mb-1">ค้นหาพนักงาน</label>
+            <div style="position:relative;">
+              <i class="fas fa-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none;"></i>
+              <input id="re-search" type="text" placeholder="พิมพ์ชื่อ, สายงาน, หรือหัวหน้างาน..."
+                class="w-full border border-gray-300 rounded-lg py-2.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                style="padding-left:34px;"
+                oninput="filterEmpRptList(this.value)" autocomplete="off">
+              <div id="re-search-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:200;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.10);max-height:260px;overflow-y:auto;margin-top:4px;"></div>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-gray-500 block mb-1">เดือน</label>
+            <select id="re-mon" class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none">${mOpts}</select>
+          </div>
+        </div>
+        <div id="re-selected" style="display:none;margin-top:12px;"></div>
+        <input type="hidden" id="re-emp" value="">
+        <div class="mt-4">
+          <button onclick="loadEmpRpt()"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-sm transition flex items-center gap-2">
+            <i class="fas fa-search"></i> ดูประวัติ
+          </button>
+        </div>
+      </div>
+      <div id="re-area"></div>
+    </div>
+
+    <!-- Tab 2: สรุปภาพรวมพนักงาน -->
+    <div id="re-pane-summary" style="display:none;">
+      <div style="background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div style="font-size:16px;font-weight:700;color:#1e293b;"><i class="fas fa-chart-bar" style="color:#3b82f6;margin-right:8px;"></i>สรุป Attendance ทุกคน</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="re-sum-month" onchange="loadEmpSummary()" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">${mOpts}</select>
+            <select id="re-sum-sort" onchange="renderEmpSummaryTable()" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">
+              <option value="score-desc">คะแนนมาก → น้อย</option>
+              <option value="score-asc">คะแนนน้อย → มาก</option>
+              <option value="work-desc">มาทำงานเยอะสุด</option>
+              <option value="late-desc">มาสายเยอะสุด</option>
+              <option value="absent-desc">ขาดเยอะสุด</option>
+              <option value="name-asc">ชื่อ ก-ฮ</option>
+            </select>
+            <div style="position:relative;">
+              <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:12px;"></i>
+              <input id="re-sum-filter" oninput="renderEmpSummaryTable()" placeholder="ค้นหา..." style="padding:8px 10px 8px 32px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;width:160px;">
+            </div>
+            <button onclick="exportEmpSummaryExcel()" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:6px;"><i class="fas fa-file-excel"></i> Export Excel</button>
+          </div>
+        </div>
+      </div>
+      <div id="re-sum-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px;"></div>
+      <div id="re-sum-table" style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;"></div>
+    </div>
+  </div>`;
     }
+
+    window.reShowSubTab = function (tab) {
+      ['search', 'summary'].forEach(t => {
+        const pane = document.getElementById('re-pane-' + t);
+        const btn = document.getElementById('re-sub-' + t);
+        if (pane) pane.style.display = t === tab ? '' : 'none';
+        if (btn) {
+          btn.style.background = t === tab ? '#fff' : 'transparent';
+          btn.style.color = t === tab ? '#1d4ed8' : '#64748b';
+          btn.style.boxShadow = t === tab ? '0 1px 4px rgba(0,0,0,.1)' : 'none';
+        }
+      });
+      if (tab === 'summary') loadEmpSummary();
+    };
+
+    let _empSummaryData = [];
+
+    window.loadEmpSummary = async function () {
+      const month = document.getElementById('re-sum-month')?.value || todayStr.slice(0, 7);
+      const tableEl = document.getElementById('re-sum-table');
+      const statsEl = document.getElementById('re-sum-stats');
+      if (tableEl) tableEl.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:20px;"></i><div style="margin-top:8px;font-size:13px;">กำลังคำนวณ...</div></div>';
+
+      await loadAttendanceMonth(month);
+
+      // Load leave requests
+      let allLeaves = {};
+      try { allLeaves = (await fbGet('/leaveRequests')) || {}; } catch (_) { }
+
+      const [yearStr, monStr] = month.split('-');
+      const daysInMonth = new Date(parseInt(yearStr), parseInt(monStr), 0).getDate();
+
+      // Count working days (exclude weekends)
+      let totalWorkDays = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(parseInt(yearStr), parseInt(monStr) - 1, d);
+        const dow = dt.getDay();
+        if (dow !== 0 && dow !== 6) totalWorkDays++;
+      }
+
+      const results = [];
+      for (const emp of db.employees) {
+        let workDays = 0, lateDays = 0, totalHrs = 0, otHrs = 0;
+        const detailWork = [], detailLate = [], detailAbsent = [], detailOT = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dk = month + '-' + String(d).padStart(2, '0');
+          const dt = new Date(parseInt(yearStr), parseInt(monStr) - 1, d);
+          const dow = dt.getDay();
+          const isWeekend = dow === 0 || dow === 6;
+          const bucket = db.attendance[dk];
+          const rec = bucket ? Object.values(bucket).find(r => r.empId === emp._key) : null;
+          if (rec && rec.checkInTime) {
+            workDays++;
+            detailWork.push({ date: dk, checkIn: rec.checkInTime, checkOut: rec.checkOutTime || '-', location: rec.locationName || '-' });
+            const lateInfo = checkLate(emp, rec.checkInTime, rec.locationId);
+            if (lateInfo.late) {
+              lateDays++;
+              detailLate.push({ date: dk, checkIn: rec.checkInTime, workStart: lateInfo.workStart || '-', mins: lateInfo.minutesLate || 0, location: rec.locationName || '-' });
+            }
+            if (rec.checkInTime && rec.checkOutTime) {
+              const [ih, im] = rec.checkInTime.split(':').map(Number);
+              const [oh, om] = rec.checkOutTime.split(':').map(Number);
+              const hrs = ((oh * 60 + om) - (ih * 60 + im)) / 60;
+              if (hrs > 0) totalHrs += hrs;
+            }
+            const recOT = rec.otHours || 0;
+            otHrs += recOT;
+            if (recOT > 0) detailOT.push({ date: dk, hours: recOT });
+          } else if (!isWeekend) {
+            // จะเช็คว่าลาหรือขาดทีหลัง
+            detailAbsent.push({ date: dk });
+          }
+        }
+
+        // Leave count (approved only, this month)
+        let leaveDays = 0;
+        const detailLeave = [];
+        const empLeaves = allLeaves[emp._key];
+        if (empLeaves && typeof empLeaves === 'object') {
+          Object.values(empLeaves).forEach(lv => {
+            if (lv.status !== 'approved') return;
+            if (!lv.startDate || !lv.startDate.startsWith(month)) return;
+            leaveDays += (lv.days || 1);
+            detailLeave.push({ date: lv.startDate, endDate: lv.endDate || lv.startDate, type: lv.leaveType || lv.type || '-', days: lv.days || 1, reason: lv.reason || '-' });
+          });
+        }
+
+        // ลบวันลาออกจาก detailAbsent
+        const leaveDateSet = new Set();
+        detailLeave.forEach(lv => {
+          const sd = new Date(lv.date), ed = new Date(lv.endDate || lv.date);
+          for (let cur = new Date(sd); cur <= ed; cur.setDate(cur.getDate() + 1)) {
+            leaveDateSet.add(cur.toISOString().slice(0, 10));
+          }
+        });
+        const filteredAbsent = detailAbsent.filter(a => !leaveDateSet.has(a.date));
+        const absentDays = filteredAbsent.length;
+
+        const score = Math.max(0, Math.min(100, 100 - (absentDays * 5) - (lateDays * 2) - (leaveDays * 1)));
+
+        results.push({
+          emp, name: emp.name, dept: emp.dept || '-', empKey: emp._key,
+          workDays, lateDays, leaveDays, absentDays,
+          totalHrs: Math.round(totalHrs * 10) / 10,
+          otHrs: Math.round(otHrs * 10) / 10,
+          score,
+          detailWork, detailLate, detailLeave, detailAbsent: filteredAbsent, detailOT
+        });
+      }
+
+      _empSummaryData = results;
+
+      // Stats
+      const avgScore = results.length ? Math.round(results.reduce((s, r) => s + r.score, 0) / results.length) : 0;
+      const best = [...results].sort((a, b) => b.score - a.score)[0];
+      const totalLate = results.reduce((s, r) => s + r.lateDays, 0);
+      const totalAbsent = results.reduce((s, r) => s + r.absentDays, 0);
+
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <div style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:14px;padding:16px;color:#fff;">
+            <div style="font-size:11px;opacity:.8;"><i class="fas fa-users" style="margin-right:4px;"></i>พนักงานทั้งหมด</div>
+            <div style="font-size:24px;font-weight:800;margin-top:4px;">${results.length} คน</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#16a34a,#15803d);border-radius:14px;padding:16px;color:#fff;">
+            <div style="font-size:11px;opacity:.8;"><i class="fas fa-star" style="margin-right:4px;"></i>คะแนนเฉลี่ย</div>
+            <div style="font-size:24px;font-weight:800;margin-top:4px;">${avgScore}/100</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#d97706,#b45309);border-radius:14px;padding:16px;color:#fff;">
+            <div style="font-size:11px;opacity:.8;"><i class="fas fa-clock" style="margin-right:4px;"></i>มาสายรวม</div>
+            <div style="font-size:24px;font-weight:800;margin-top:4px;">${totalLate} ครั้ง</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);border-radius:14px;padding:16px;color:#fff;">
+            <div style="font-size:11px;opacity:.8;"><i class="fas fa-user-times" style="margin-right:4px;"></i>ขาดงานรวม</div>
+            <div style="font-size:24px;font-weight:800;margin-top:4px;">${totalAbsent} วัน</div>
+          </div>
+          ${best ? '<div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:14px;padding:16px;color:#fff;"><div style="font-size:11px;opacity:.8;"><i class="fas fa-trophy" style="margin-right:4px;"></i>คะแนนสูงสุด</div><div style="font-size:16px;font-weight:800;margin-top:4px;">' + best.name + '</div><div style="font-size:11px;opacity:.8;margin-top:2px;">' + best.score + ' คะแนน</div></div>' : ''}
+        `;
+      }
+
+      renderEmpSummaryTable();
+    };
+
+    window.renderEmpSummaryTable = function () {
+      const el = document.getElementById('re-sum-table');
+      if (!el) return;
+      const sort = document.getElementById('re-sum-sort')?.value || 'score-desc';
+      const filter = (document.getElementById('re-sum-filter')?.value || '').toLowerCase().trim();
+
+      let data = [..._empSummaryData];
+      if (filter) data = data.filter(r => r.name.toLowerCase().includes(filter) || r.dept.toLowerCase().includes(filter));
+
+      // Sort
+      if (sort === 'score-desc') data.sort((a, b) => b.score - a.score);
+      else if (sort === 'score-asc') data.sort((a, b) => a.score - b.score);
+      else if (sort === 'work-desc') data.sort((a, b) => b.workDays - a.workDays);
+      else if (sort === 'late-desc') data.sort((a, b) => b.lateDays - a.lateDays);
+      else if (sort === 'absent-desc') data.sort((a, b) => b.absentDays - a.absentDays);
+      else if (sort === 'name-asc') data.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+
+      const getGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'F';
+      const gradeColor = (g) => ({ A: '#16a34a', B: '#2563eb', C: '#d97706', D: '#ea580c', F: '#dc2626' }[g] || '#64748b');
+      const gradeBg = (g) => ({ A: '#dcfce7', B: '#dbeafe', C: '#fef3c7', D: '#ffedd5', F: '#fee2e2' }[g] || '#f1f5f9');
+      const medal = (i) => i === 0 ? '<span style="font-size:14px;">🥇</span>' : i === 1 ? '<span style="font-size:14px;">🥈</span>' : i === 2 ? '<span style="font-size:14px;">🥉</span>' : '<span style="color:#94a3b8;font-weight:700;">' + (i + 1) + '</span>';
+
+      if (!data.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">ไม่พบข้อมูล</div>';
+        return;
+      }
+
+      el.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:800px;">
+          <thead>
+            <tr style="background:#1e293b;color:#fff;">
+              <th style="padding:12px 10px;text-align:center;font-size:12px;width:50px;">#</th>
+              <th style="padding:12px 10px;text-align:left;font-size:12px;">ชื่อพนักงาน</th>
+              <th style="padding:12px 10px;text-align:left;font-size:12px;">สายงาน</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">มาทำงาน</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">ลา</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">ขาด</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">มาสาย</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">ชม.ทำงาน</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;">OT</th>
+              <th style="padding:12px 10px;text-align:center;font-size:12px;width:90px;">คะแนน</th>
+              <th style="padding:12px 8px;text-align:center;font-size:12px;width:50px;">เกรด</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map((r, i) => {
+              const grade = getGrade(r.score);
+              const bg = i % 2 === 0 ? '#fff' : '#f8fafc';
+              const idx = _empSummaryData.indexOf(r);
+              const clk = (type) => 'onclick="showSummaryDetail(' + idx + ',\'' + type + '\')" style="cursor:pointer;" title="คลิกดูรายละเอียด"';
+              return '<tr style="background:' + bg + ';border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'' + bg + '\'">'
+                + '<td style="padding:10px;text-align:center;">' + medal(i) + '</td>'
+                + '<td style="padding:10px;font-weight:700;color:#1e293b;">' + r.name + '</td>'
+                + '<td style="padding:10px;color:#64748b;font-size:12px;">' + r.dept + '</td>'
+                + '<td style="padding:10px;text-align:center;cursor:pointer;" ' + clk('work') + '><span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700;">' + r.workDays + ' วัน</span></td>'
+                + '<td style="padding:10px;text-align:center;cursor:pointer;" ' + clk('leave') + '>' + (r.leaveDays > 0 ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;">' + r.leaveDays + ' วัน</span>' : '<span style="color:#d1d5db;">0</span>') + '</td>'
+                + '<td style="padding:10px;text-align:center;cursor:pointer;" ' + clk('absent') + '>' + (r.absentDays > 0 ? '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700;">' + r.absentDays + ' วัน</span>' : '<span style="color:#d1d5db;">0</span>') + '</td>'
+                + '<td style="padding:10px;text-align:center;cursor:pointer;" ' + clk('late') + '>' + (r.lateDays > 0 ? '<span style="background:#ffedd5;color:#ea580c;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;">' + r.lateDays + ' ครั้ง</span>' : '<span style="color:#d1d5db;">0</span>') + '</td>'
+                + '<td style="padding:10px;text-align:center;color:#475569;font-size:12px;cursor:pointer;" ' + clk('hours') + '>' + r.totalHrs + '</td>'
+                + '<td style="padding:10px;text-align:center;cursor:pointer;" ' + clk('ot') + '>' + (r.otHrs > 0 ? '<span style="color:#2563eb;font-weight:600;">' + r.otHrs + '</span>' : '<span style="color:#d1d5db;">0</span>') + '</td>'
+                + '<td style="padding:10px;text-align:center;"><div style="font-size:18px;font-weight:800;color:' + gradeColor(grade) + ';">' + r.score + '</div></td>'
+                + '<td style="padding:10px;text-align:center;"><span style="background:' + gradeBg(grade) + ';color:' + gradeColor(grade) + ';padding:3px 10px;border-radius:20px;font-size:13px;font-weight:800;">' + grade + '</span></td>'
+                + '</tr>';
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    };
+
+    window.showSummaryDetail = function (idx, type) {
+      const r = _empSummaryData[idx];
+      if (!r) return;
+      const fDate = (d) => { const p = d.split('-'); return parseInt(p[2]) + '/' + parseInt(p[1]) + '/' + p[0]; };
+      const dayName = (d) => ['อา','จ','อ','พ','พฤ','ศ','ส'][new Date(d).getDay()];
+      let title = '', body = '';
+      const hdr = (cols) => '<tr style="background:#1e293b;color:#fff;">' + cols.map(c => '<th style="padding:10px 8px;font-size:12px;white-space:nowrap;">' + c + '</th>').join('') + '</tr>';
+      const row = (cells, bgIdx) => '<tr style="background:' + (bgIdx % 2 === 0 ? '#fff' : '#f8fafc') + ';border-bottom:1px solid #f1f5f9;">' + cells.map(c => '<td style="padding:8px;font-size:12px;white-space:nowrap;">' + c + '</td>').join('') + '</tr>';
+
+      if (type === 'work') {
+        title = 'มาทำงาน — ' + r.name;
+        const items = r.detailWork || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มีข้อมูล</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่', 'วัน', 'เข้างาน', 'ออกงาน', 'สถานที่'])
+            + items.map((d, i) => row([i + 1, fDate(d.date), dayName(d.date), d.checkIn, d.checkOut, d.location], i)).join('')
+            + '</table></div>';
+        }
+      } else if (type === 'leave') {
+        title = 'การลา — ' + r.name;
+        const items = r.detailLeave || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มีการลาในเดือนนี้</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่เริ่ม', 'วันที่สิ้นสุด', 'ประเภทการลา', 'จำนวนวัน', 'เหตุผล'])
+            + items.map((d, i) => row([i + 1, fDate(d.date), fDate(d.endDate || d.date), d.type, d.days, d.reason], i)).join('')
+            + '</table></div>';
+        }
+      } else if (type === 'absent') {
+        title = 'ขาดงาน — ' + r.name;
+        const items = r.detailAbsent || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มีวันขาดงาน</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่', 'วัน'])
+            + items.map((d, i) => row([i + 1, fDate(d.date), dayName(d.date)], i)).join('')
+            + '</table></div>';
+        }
+      } else if (type === 'late') {
+        title = 'มาสาย — ' + r.name;
+        const items = r.detailLate || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มีการมาสาย</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่', 'วัน', 'เข้างาน', 'กำหนดเข้า', 'สาย (นาที)', 'สถานที่'])
+            + items.map((d, i) => row([i + 1, fDate(d.date), dayName(d.date), d.checkIn, d.workStart, d.mins, d.location], i)).join('')
+            + '</table></div>';
+        }
+      } else if (type === 'hours') {
+        title = 'ชั่วโมงทำงาน — ' + r.name;
+        const items = r.detailWork || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มีข้อมูล</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่', 'วัน', 'เข้างาน', 'ออกงาน', 'ชั่วโมง'])
+            + items.map((d, i) => {
+              let hrs = '-';
+              if (d.checkIn && d.checkOut && d.checkOut !== '-') {
+                const [ih, im] = d.checkIn.split(':').map(Number);
+                const [oh, om] = d.checkOut.split(':').map(Number);
+                hrs = (Math.round(((oh * 60 + om) - (ih * 60 + im)) / 6) / 10);
+                if (hrs < 0) hrs = '-';
+              }
+              return row([i + 1, fDate(d.date), dayName(d.date), d.checkIn, d.checkOut, hrs], i);
+            }).join('')
+            + '</table></div>'
+            + '<div style="text-align:right;padding:10px;font-size:13px;font-weight:700;color:#1e293b;">รวม: ' + r.totalHrs + ' ชม.</div>';
+        }
+      } else if (type === 'ot') {
+        title = 'ชั่วโมง OT — ' + r.name;
+        const items = r.detailOT || [];
+        if (!items.length) { body = '<div style="text-align:center;padding:30px;color:#94a3b8;">ไม่มี OT ในเดือนนี้</div>'; }
+        else {
+          body = '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;">'
+            + hdr(['#', 'วันที่', 'วัน', 'ชั่วโมง OT'])
+            + items.map((d, i) => row([i + 1, fDate(d.date), dayName(d.date), d.hours], i)).join('')
+            + '</table></div>'
+            + '<div style="text-align:right;padding:10px;font-size:13px;font-weight:700;color:#1e293b;">รวม OT: ' + r.otHrs + ' ชม.</div>';
+        }
+      }
+
+      const footer = '<button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ปิด</button>';
+      openModal(title, '<div style="padding:4px;">' + body + '</div>', footer);
+    };
+
+    window.exportEmpSummaryExcel = function () {
+      if (!_empSummaryData || !_empSummaryData.length) return alert('ไม่มีข้อมูล กรุณาโหลดข้อมูลก่อน');
+      const month = document.getElementById('re-sum-month')?.value || todayStr.slice(0, 7);
+      const fDate = (d) => { const p = d.split('-'); return parseInt(p[2]) + '/' + parseInt(p[1]) + '/' + p[0]; };
+      const dayName = (d) => ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][new Date(d).getDay()];
+      const getGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'F';
+
+      const wb = XLSX.utils.book_new();
+
+      // ===== Sheet 1: สรุปรวมทุกคน =====
+      const sumHeaders = ['#', 'ชื่อพนักงาน', 'สายงาน', 'มาทำงาน (วัน)', 'ลา (วัน)', 'ขาด (วัน)', 'มาสาย (ครั้ง)', 'ชม.ทำงาน', 'OT (ชม.)', 'คะแนน', 'เกรด'];
+      const sumData = _empSummaryData.map((r, i) => [
+        i + 1, r.name, r.dept, r.workDays, r.leaveDays, r.absentDays, r.lateDays, r.totalHrs, r.otHrs, r.score, getGrade(r.score)
+      ]);
+      const ws1 = XLSX.utils.aoa_to_sheet([['สรุป Attendance ทุกคน — เดือน ' + month], [], sumHeaders, ...sumData]);
+      ws1['!cols'] = [{ wch: 5 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }];
+      ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+      XLSX.utils.book_append_sheet(wb, ws1, 'สรุปรวมทุกคน');
+
+      // ===== Sheet per employee =====
+      for (const r of _empSummaryData) {
+        const sheetName = (r.name || 'N/A').replace(/[\\\/\?\*\[\]:]/g, '').slice(0, 31);
+        const rows = [];
+        rows.push(['สรุป Attendance — ' + r.name]);
+        rows.push(['สายงาน: ' + r.dept, '', 'เดือน: ' + month]);
+        rows.push([]);
+
+        // สรุปตัวเลข
+        rows.push(['สรุปภาพรวม']);
+        rows.push(['มาทำงาน', r.workDays + ' วัน', '', 'ลา', r.leaveDays + ' วัน', '', 'ขาด', r.absentDays + ' วัน']);
+        rows.push(['มาสาย', r.lateDays + ' ครั้ง', '', 'ชม.ทำงาน', r.totalHrs + ' ชม.', '', 'OT', r.otHrs + ' ชม.']);
+        rows.push(['คะแนน', r.score + '/100', '', 'เกรด', getGrade(r.score)]);
+        rows.push([]);
+
+        // รายละเอียดมาทำงาน
+        rows.push(['รายละเอียดวันมาทำงาน (' + r.workDays + ' วัน)']);
+        rows.push(['#', 'วันที่', 'วัน', 'เข้างาน', 'ออกงาน', 'สถานที่']);
+        (r.detailWork || []).forEach((d, i) => {
+          rows.push([i + 1, fDate(d.date), dayName(d.date), d.checkIn, d.checkOut, d.location]);
+        });
+        rows.push([]);
+
+        // รายละเอียดมาสาย
+        if (r.detailLate && r.detailLate.length) {
+          rows.push(['รายละเอียดมาสาย (' + r.lateDays + ' ครั้ง)']);
+          rows.push(['#', 'วันที่', 'วัน', 'เข้างาน', 'กำหนดเข้า', 'สาย (นาที)', 'สถานที่']);
+          r.detailLate.forEach((d, i) => {
+            rows.push([i + 1, fDate(d.date), dayName(d.date), d.checkIn, d.workStart, d.mins, d.location]);
+          });
+          rows.push([]);
+        }
+
+        // รายละเอียดการลา
+        if (r.detailLeave && r.detailLeave.length) {
+          rows.push(['รายละเอียดการลา (' + r.leaveDays + ' วัน)']);
+          rows.push(['#', 'วันที่เริ่ม', 'วันที่สิ้นสุด', 'ประเภท', 'จำนวนวัน', 'เหตุผล']);
+          r.detailLeave.forEach((d, i) => {
+            rows.push([i + 1, fDate(d.date), fDate(d.endDate || d.date), d.type, d.days, d.reason]);
+          });
+          rows.push([]);
+        }
+
+        // รายละเอียดขาดงาน
+        if (r.detailAbsent && r.detailAbsent.length) {
+          rows.push(['รายละเอียดขาดงาน (' + r.absentDays + ' วัน)']);
+          rows.push(['#', 'วันที่', 'วัน']);
+          r.detailAbsent.forEach((d, i) => {
+            rows.push([i + 1, fDate(d.date), dayName(d.date)]);
+          });
+          rows.push([]);
+        }
+
+        // รายละเอียด OT
+        if (r.detailOT && r.detailOT.length) {
+          rows.push(['รายละเอียด OT (' + r.otHrs + ' ชม.)']);
+          rows.push(['#', 'วันที่', 'วัน', 'ชั่วโมง OT']);
+          r.detailOT.forEach((d, i) => {
+            rows.push([i + 1, fDate(d.date), dayName(d.date), d.hours]);
+          });
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 5 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+
+      XLSX.writeFile(wb, `attendance_summary_${month}.xlsx`);
+    };
 
     window.filterEmpRptList = function (q) {
       const drop = document.getElementById('re-search-drop');
@@ -9037,6 +9466,11 @@
           <div class="emp-menu-icon" style="background:#eff6ff;"><i class="fas fa-business-time" style="color:#2563eb;"></i></div>
           <span class="emp-menu-label">ประวัติ โอที</span>
         </button>
+        <!-- ขออนุมัติ OT -->
+        <button onclick="openOTApprovalModal()" class="emp-menu-btn">
+          <div class="emp-menu-icon" style="background:#fef3c7;"><i class="fas fa-file-signature" style="color:#d97706;"></i></div>
+          <span class="emp-menu-label">ขออนุมัติ OT</span>
+        </button>
         <!-- ประวัติการลา -->
         <button onclick="openLeaveHistModal()" class="emp-menu-btn">
           <div class="emp-menu-icon" style="background:#fefce8;"><i class="fas fa-file-alt" style="color:#ca8a04;"></i></div>
@@ -9337,6 +9771,106 @@
         renderEmpHome();
       } catch (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> ส่งคำขอลา'; }
+        alert('เกิดข้อผิดพลาด: ' + err.message);
+      }
+    };
+
+    // =====================================================================
+    //  EMPLOYEE OT APPROVAL REQUEST MODAL
+    // =====================================================================
+    window.openOTApprovalModal = function () {
+      const e = db.employees.find(x => x._key === CU.id); if (!e) return;
+      const today = todayStr;
+      // Generate time options 00:00 - 23:30
+      const timeOpts = [];
+      for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 30) {
+          const t = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+          timeOpts.push(t);
+        }
+      }
+      const startOpts = timeOpts.map(t => `<option value="${t}" ${t === '17:00' ? 'selected' : ''}>${t}</option>`).join('');
+      const endOpts = timeOpts.map(t => `<option value="${t}" ${t === '20:00' ? 'selected' : ''}>${t}</option>`).join('');
+      const body = `
+  <div style="display:flex;flex-direction:column;gap:14px;">
+    <div>
+      <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;"><i class="fas fa-calendar-alt" style="color:#d97706;margin-right:4px;"></i>วันที่ทำ OT</label>
+      <input type="date" id="ot-date" value="${today}" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;"><i class="fas fa-clock" style="color:#16a34a;margin-right:4px;"></i>เวลาเริ่ม</label>
+        <select id="ot-start" onchange="otCalcHours()" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">${startOpts}</select>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;"><i class="fas fa-clock" style="color:#dc2626;margin-right:4px;"></i>เวลาสิ้นสุด</label>
+        <select id="ot-end" onchange="otCalcHours()" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:Sarabun,sans-serif;outline:none;background:#fff;cursor:pointer;">${endOpts}</select>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;"><i class="fas fa-hourglass-half" style="color:#2563eb;margin-right:4px;"></i>จำนวนชั่วโมง OT</label>
+      <input type="number" id="ot-hours" value="3" min="0.5" max="24" step="0.5" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:Sarabun,sans-serif;outline:none;box-sizing:border-box;">
+    </div>
+    <div id="ot-preview" style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:8px;">
+      <i class="fas fa-business-time" style="color:#d97706;font-size:16px;"></i>
+      <span style="font-size:13px;color:#92400e;font-weight:600;">OT: <span id="ot-preview-time">17:00 - 20:00</span> = <span id="ot-preview-hrs" style="color:#d97706;font-size:16px;font-weight:800;">3</span> ชั่วโมง</span>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">หมายเหตุ <span style="color:#94a3b8;">(ถ้ามี)</span></label>
+      <textarea id="ot-note" rows="2" placeholder="เช่น งานเร่งด่วน, ส่งงานลูกค้า..." style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;resize:none;box-sizing:border-box;"></textarea>
+    </div>
+  </div>`;
+      const footer = `
+    <button onclick="closeModal()" style="background:#f3f4f6;color:#374151;border:none;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;">ยกเลิก</button>
+    <button onclick="submitOTApproval()" id="ot-submit-btn" style="flex:1;background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border:none;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;">
+      <i class="fas fa-paper-plane"></i> ส่งคำขอ OT
+    </button>`;
+      openModal('ขออนุมัติทำ OT', body, footer);
+      otCalcHours();
+    };
+
+    window.otCalcHours = function () {
+      const s = document.getElementById('ot-start')?.value || '17:00';
+      const e = document.getElementById('ot-end')?.value || '20:00';
+      const [sh, sm] = s.split(':').map(Number);
+      const [eh, em] = e.split(':').map(Number);
+      let mins = (eh * 60 + em) - (sh * 60 + sm);
+      if (mins <= 0) mins += 24 * 60; // overnight
+      const hrs = Math.round(mins / 30) * 0.5; // round to 0.5
+      const hrsEl = document.getElementById('ot-hours');
+      if (hrsEl) hrsEl.value = hrs;
+      const pTime = document.getElementById('ot-preview-time');
+      const pHrs = document.getElementById('ot-preview-hrs');
+      if (pTime) pTime.textContent = s + ' - ' + e;
+      if (pHrs) pHrs.textContent = hrs;
+    };
+
+    window.submitOTApproval = async function () {
+      const e = db.employees.find(x => x._key === CU.id); if (!e) return;
+      const date = document.getElementById('ot-date')?.value;
+      const timeStart = document.getElementById('ot-start')?.value;
+      const timeEnd = document.getElementById('ot-end')?.value;
+      const hours = parseFloat(document.getElementById('ot-hours')?.value) || 0;
+      const note = document.getElementById('ot-note')?.value?.trim() || '';
+      if (!date) { alert('กรุณาเลือกวันที่'); return; }
+      if (hours <= 0) { alert('กรุณาระบุจำนวนชั่วโมง'); return; }
+      const btn = document.getElementById('ot-submit-btn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังส่ง...'; }
+      try {
+        await fbPush('/otApprovals/' + e._key, {
+          empId: e._key, empName: e.name, dept: e.dept || '', sup: e.sup || '',
+          date, timeStart, timeEnd, hours, note,
+          status: 'pending',
+          submittedAt: new Date().toISOString()
+        });
+        closeModal();
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;padding:12px 24px;border-radius:20px;font-size:14px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2);font-family:Sarabun,sans-serif;';
+        toast.innerHTML = '<i class="fas fa-check" style="margin-right:8px;"></i>ส่งคำขอ OT สำเร็จ รอการอนุมัติ';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+      } catch (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> ส่งคำขอ OT'; }
         alert('เกิดข้อผิดพลาด: ' + err.message);
       }
     };
@@ -12121,11 +12655,18 @@
       const avail = db.employees.filter(e => !already.has(e._key));
       if (!avail.length) { alert('พนักงานทุกคนเช็คชื่อแล้ว'); return; }
       const opts = [{ v: '', l: '-- เลือกพนักงาน --' }, ...avail.map(e => ({ v: e._key, l: e.name + ' (' + e.dept + ')' }))];
+      const locOpts = [{v:'', l:'-- เลือกสถานที่ --'}, ...gpsLocations.map(l => ({v:l.id, l:l.name + (l.workStart ? ' (' + l.workStart + '-' + (l.workEnd||'17:00') + ')' : '')}))];
       const body = `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div>
         <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">พนักงาน *</label>
         ${Sel('aci-emp', opts)}
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;"><i class="fas fa-map-marker-alt" style="color:#0891b2;margin-right:4px;"></i>สถานที่เข้างาน</label>
+        <select id="aci-loc" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;box-sizing:border-box;outline:none;background:#fff;cursor:pointer;">
+          ${locOpts.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('')}
+        </select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div>
@@ -12164,9 +12705,12 @@
       const inT = document.getElementById('aci-in').value;
       const outT = document.getElementById('aci-out').value;
       const ot = parseFloat(document.getElementById('aci-ot').value) || 0;
+      const locVal = document.getElementById('aci-loc').value;
       if (!empKey) return alert('กรุณาเลือกพนักงาน');
       if (!inT) return alert('กรุณากรอกเวลาเข้างาน');
+      if (!locVal) return alert('กรุณาเลือกสถานที่เข้างาน');
       const emp = db.employees.find(e => e._key === empKey); if (!emp) return;
+      const loc = gpsLocations.find(l => l.id === locVal);
       const wage = emp.wage || db.wage.defaultWage;
       const otPay = Math.round(ot * (db.wage.otRate || 75));
       const rec = {
@@ -12174,6 +12718,7 @@
         checkInTime: inT, otHours: ot, wage, otPay, total: wage + otPay,
         gpsOk: true, distMeters: 0, timestamp: Date.now(),
         checkInMethod: 'admin', adminEditBy: CU.displayName,
+        locationId: locVal, locationName: loc ? loc.name : locVal,
         ...(outT ? { checkOutTime: outT, checkOutGps: true } : {})
       };
       showSync();
@@ -14220,8 +14765,12 @@ async function handle(req) {
 
         const ciMin = timeToMin(rec?.checkInTime);
         const coMin = timeToMin(rec?.checkOutTime);
-        const isLate = rec && ciMin !== null && siMin !== null && ciMin > siMin;
-        const isEarly = rec && coMin !== null && soMin !== null && coMin < soMin;
+        // ใช้เวลาเข้างานตามพื้นที่ (location) ก่อน → fallback แผนก → global
+        const locWT = rec ? getWorkTimes(e, rec.locationId) : null;
+        const locSiMin = locWT ? timeToMin(locWT.workStart) : siMin;
+        const locSoMin = locWT ? timeToMin(locWT.workEnd) : soMin;
+        const isLate = rec && ciMin !== null && locSiMin !== null && ciMin > locSiMin;
+        const isEarly = rec && coMin !== null && locSoMin !== null && coMin < locSoMin;
 
         // Accumulate summary (only up to today)
         if (d <= cutoffD) {
@@ -14287,7 +14836,7 @@ async function handle(req) {
           wage: rec?.wage || 0, total: rec?.total || 0,
           leaveType: lv?.type || '', leaveReason: lv?.reason || '',
           leaveDeduct: lv?.totalDeduct || 0,
-          isLate, isEarly, shiftIn, shiftOut,
+          isLate, isEarly, shiftIn: locWT?.workStart || shiftIn, shiftOut: locWT?.workEnd || shiftOut,
           holidayName: specialHolMap[dk] || '',
           locationName: locLabel,
           checkOutLocationName: rec?.checkOutLocationName || '',
@@ -16477,7 +17026,6 @@ async function handle(req) {
           const tax = getVal('tax'), sso = getVal('sso'), other = getVal('other');
           const income = base + ot + bonus;
           const deduct = tax + sso + other;
-          // บันทึกเฉพาะเดือนที่มีข้อมูล (ไม่บันทึกเดือนว่าง)
           if (income > 0 || deduct > 0) {
             updates[ym] = {
               base, ot, bonus, income,
@@ -16486,11 +17034,18 @@ async function handle(req) {
               updatedAt: Date.now(),
               updatedBy: CU.displayName || CU.id
             };
+          } else {
+            // ลบข้อมูลเดือนที่ว่าง → set null เพื่อลบออกจาก Firebase
+            updates[ym] = null;
           }
         });
 
-        // บันทึกลง Firebase ทีเดียว
-        await fbSet(`/payslipYearly/${empKey}`, { ...((await fbGet(`/payslipYearly/${empKey}`).catch(() => null)) || {}), ...updates });
+        // บันทึกลง Firebase — เขียนทับทั้งปีของคนนี้
+        const existing = (await fbGet(`/payslipYearly/${empKey}`).catch(() => null)) || {};
+        const merged = { ...existing, ...updates };
+        // ลบ key ที่เป็น null
+        Object.keys(merged).forEach(k => { if (merged[k] === null) delete merged[k]; });
+        await fbSet(`/payslipYearly/${empKey}`, merged);
 
         btn.innerHTML = '<i class="fas fa-check-circle"></i> บันทึกแล้ว!';
         btn.style.background = '#16a34a';
@@ -17135,7 +17690,7 @@ async function handle(req) {
     </div>
 
     <!-- Tab bar -->
-    <div style="display:flex;gap:4px;background:#e5e7eb;border-radius:12px;padding:4px;margin-bottom:20px;width:fit-content;">
+    <div style="display:flex;gap:4px;background:#e5e7eb;border-radius:12px;padding:4px;margin-bottom:20px;overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <button onclick="lsShowTab('types')" id="ls-tab-types"
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:#fff;color:#1d4ed8;box-shadow:0 1px 4px rgba(0,0,0,.1);">
         <i class="fas fa-list-ul mr-2"></i>ประเภทการลา
@@ -17171,6 +17726,10 @@ async function handle(req) {
       <button onclick="lsShowTab('punish')" id="ls-tab-punish"
         style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-gavel mr-2"></i>ลงโทษพนักงาน
+      </button>
+      <button onclick="lsShowTab('ot-approve')" id="ls-tab-ot-approve"
+        style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-business-time mr-2"></i>ขออนุมัติโอที <span id="ls-ot-pending-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;margin-left:4px;"></span>
       </button>
     </div>
 
@@ -17564,6 +18123,22 @@ async function handle(req) {
       </div>
     </div>
 
+    <!-- Tab: ขออนุมัติโอที -->
+    <div id="ls-pane-ot-approve" style="display:none;">
+      <div style="display:flex;gap:4px;background:#f1f5f9;border-radius:10px;padding:3px;margin-bottom:16px;width:fit-content;">
+        <button onclick="lsOtSubTab('pending')" id="ls-ot-sub-pending" style="padding:7px 18px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:#fff;color:#d97706;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+          <i class="fas fa-clock mr-1"></i>รออนุมัติ
+        </button>
+        <button onclick="lsOtSubTab('history')" id="ls-ot-sub-history" style="padding:7px 18px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+          <i class="fas fa-history mr-1"></i>ประวัติ
+        </button>
+      </div>
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;">
+        <div id="ls-ot-pending-list"></div>
+        <div id="ls-ot-history-list" style="display:none;"></div>
+      </div>
+    </div>
+
   </div>`;
 
       lsLoadTypes();
@@ -17576,7 +18151,7 @@ async function handle(req) {
     }
 
     window.lsShowTab = function (tab) {
-      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce', 'linesum', 'punish'].forEach(t => {
+      ['types', 'approve', 'history', 'holidays', 'scanner', 'photos', 'announce', 'linesum', 'punish', 'ot-approve'].forEach(t => {
         const pane = document.getElementById(`ls-pane-${t}`);
         const btn = document.getElementById(`ls-tab-${t}`);
         if (!pane || !btn) return;
@@ -17590,6 +18165,7 @@ async function handle(req) {
       if (tab === 'history') lsLoadLeaveHistory();
       if (tab === 'punish') lsInitPunish();
       if (tab === 'announce') lsLoadAnnouncements();
+      if (tab === 'ot-approve') lsLoadOTApprovals();
     };
 
     window.lsLineSummaryBuild = async function () {
@@ -18922,6 +19498,151 @@ async function handle(req) {
         }
       } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
     };
+
+    // =====================================================================
+    //  OT APPROVAL — Admin Functions
+    // =====================================================================
+    let _lsOtAllReqs = [];
+
+    window.lsOtSubTab = function (sub) {
+      ['pending', 'history'].forEach(s => {
+        const el = document.getElementById('ls-ot-' + s + '-list');
+        const btn = document.getElementById('ls-ot-sub-' + s);
+        if (el) el.style.display = s === sub ? '' : 'none';
+        if (btn) {
+          btn.style.background = s === sub ? '#fff' : 'transparent';
+          btn.style.color = s === sub ? '#d97706' : '#64748b';
+          btn.style.boxShadow = s === sub ? '0 1px 3px rgba(0,0,0,.08)' : 'none';
+        }
+      });
+      if (sub === 'history') lsRenderOTHistory();
+    };
+
+    async function lsLoadOTApprovals() {
+      const el = document.getElementById('ls-ot-pending-list');
+      const badge = document.getElementById('ls-ot-pending-badge');
+      if (!el) return;
+      el.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>';
+      try {
+        const raw = await fbGet('/otApprovals');
+        let all = [];
+        if (raw && typeof raw === 'object') {
+          Object.entries(raw).forEach(([empId, reqs]) => {
+            if (!reqs || typeof reqs !== 'object') return;
+            Object.entries(reqs).forEach(([reqId, r]) => {
+              if (r) all.push({ ...r, _empId: empId, _reqId: reqId });
+            });
+          });
+        }
+        _lsOtAllReqs = all;
+        const pending = all.filter(r => r.status === 'pending');
+        pending.sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
+
+        if (badge) {
+          if (pending.length) { badge.style.display = 'inline'; badge.textContent = pending.length; }
+          else badge.style.display = 'none';
+        }
+        if (!pending.length) {
+          el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;"><i class="fas fa-check-circle" style="font-size:32px;color:#bbf7d0;display:block;margin-bottom:10px;"></i><div style="font-size:13px;">ไม่มีรายการรออนุมัติ OT</div></div>';
+          return;
+        }
+        el.innerHTML = pending.map(r => {
+          const sub = r.submittedAt ? new Date(r.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+          return `
+      <div id="ls-ot-${r._empId}-${r._reqId}" style="padding:16px 20px;border-bottom:1px solid #f1f5f9;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="width:34px;height:34px;background:linear-gradient(135deg,#d97706,#b45309);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fas fa-business-time" style="color:#fff;font-size:13px;"></i>
+              </div>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1e293b;">${r.empName || r._empId}</div>
+                <div style="font-size:11px;color:#94a3b8;">${r.dept || ''} ${sub ? '· ส่งเมื่อ ' + sub : ''}</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+              <span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;"><i class="fas fa-calendar-alt" style="margin-right:4px;font-size:10px;"></i>${r.date}</span>
+              <span style="background:#eff6ff;color:#1d4ed8;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;"><i class="fas fa-clock" style="margin-right:4px;font-size:10px;"></i>${r.timeStart} - ${r.timeEnd}</span>
+              <span style="background:#fef2f2;color:#dc2626;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${r.hours} ชม.</span>
+            </div>
+            ${r.note ? '<div style="font-size:12px;color:#475569;background:#f8fafc;padding:8px 12px;border-radius:8px;border-left:3px solid #fbbf24;"><i class="fas fa-comment-alt" style="margin-right:6px;color:#94a3b8;font-size:10px;"></i>' + r.note + '</div>' : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
+            <button onclick="lsApproveOT('${r._empId}','${r._reqId}')"
+              style="padding:9px 20px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:8px;">
+              <i class="fas fa-check"></i> อนุมัติ
+            </button>
+            <button onclick="lsRejectOT('${r._empId}','${r._reqId}')"
+              style="padding:9px 20px;background:#fee2e2;color:#dc2626;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:8px;">
+              <i class="fas fa-times"></i> ไม่อนุมัติ
+            </button>
+          </div>
+        </div>
+      </div>`;
+        }).join('');
+      } catch (err) {
+        el.innerHTML = '<div style="text-align:center;padding:24px;color:#dc2626;font-size:13px;">โหลดข้อมูลไม่สำเร็จ: ' + err.message + '</div>';
+      }
+    }
+
+    window.lsApproveOT = async function (empId, reqId) {
+      showSync();
+      try {
+        await fbPatch('/otApprovals/' + empId + '/' + reqId, { status: 'approved', approvedAt: new Date().toISOString(), approvedBy: CU.name || CU.id });
+        hideSync();
+        lsToast('อนุมัติ OT สำเร็จ', '#16a34a');
+        const row = document.getElementById('ls-ot-' + empId + '-' + reqId);
+        if (row) { row.style.background = '#f0fdf4'; row.style.opacity = '0.6'; setTimeout(() => { row.remove(); lsLoadOTApprovals(); }, 1200); }
+      } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
+    };
+
+    window.lsRejectOT = async function (empId, reqId) {
+      if (!confirm('ยืนยันการไม่อนุมัติ OT นี้?')) return;
+      showSync();
+      try {
+        await fbPatch('/otApprovals/' + empId + '/' + reqId, { status: 'rejected', rejectedAt: new Date().toISOString(), rejectedBy: CU.name || CU.id });
+        hideSync();
+        lsToast('บันทึกการไม่อนุมัติ OT แล้ว', '#dc2626');
+        const row = document.getElementById('ls-ot-' + empId + '-' + reqId);
+        if (row) { row.style.background = '#fef2f2'; row.style.opacity = '0.6'; setTimeout(() => { row.remove(); lsLoadOTApprovals(); }, 1200); }
+      } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
+    };
+
+    function lsRenderOTHistory() {
+      const el = document.getElementById('ls-ot-history-list');
+      if (!el) return;
+      const reqs = _lsOtAllReqs.filter(r => r.status !== 'pending');
+      reqs.sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
+      if (!reqs.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">ไม่มีประวัติ</div>';
+        return;
+      }
+      el.innerHTML = reqs.slice(0, 100).map(r => {
+        const isApproved = r.status === 'approved';
+        const statusBadge = isApproved
+          ? '<span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;"><i class="fas fa-check-circle" style="margin-right:4px;"></i>อนุมัติ</span>'
+          : '<span style="background:#fee2e2;color:#dc2626;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;"><i class="fas fa-times-circle" style="margin-right:4px;"></i>ไม่อนุมัติ</span>';
+        const actionDate = r.approvedAt || r.rejectedAt || '';
+        const actionBy = r.approvedBy || r.rejectedBy || '';
+        const sub = actionDate ? new Date(actionDate).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        return `
+      <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:14px;font-weight:700;color:#1e293b;">${r.empName || r._empId}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+            <span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${r.date}</span>
+            <span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${r.timeStart}-${r.timeEnd}</span>
+            <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">${r.hours} ชม.</span>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          ${statusBadge}
+          <div style="font-size:10px;color:#94a3b8;margin-top:4px;">${sub}${actionBy ? ' · ' + actionBy : ''}</div>
+        </div>
+      </div>`;
+      }).join('');
+    }
 
     function lsToast(msg, color = '#16a34a') {
       const t = document.createElement('div');
