@@ -10843,9 +10843,9 @@
     // ============================================================
     //  FACE SECURITY CONSTANTS  (ปรับค่าได้ตามสภาพแวดล้อม)
     // ============================================================
-    const FACE_MATCH_THRESHOLD = 0.48;  // ผ่อนขึ้น: สแกนติดง่าย (ความปลอดภัยอยู่ที่ ambiguity check)
-    const FACE_CONFIRM_FRAMES = 1;     // ผ่าน 1 เฟรม — เร็วสุด (ปลอดภัยเพราะเทียบแค่ใบหน้าตัวเองที่ login)
-    const FACE_CONFIRM_DIST_MAX = 0.46;  // ผ่อนให้ confirm ง่ายขึ้น
+    const FACE_MATCH_THRESHOLD = 0.42;  // สมดุล: ป้องกันคนอื่น แต่ไม่ยากเกินไป
+    const FACE_CONFIRM_FRAMES = 2;     // ต้องผ่าน 2 เฟรมติดต่อกัน
+    const FACE_CONFIRM_DIST_MAX = 0.40;  // ต้องใกล้เคียงพอสมควร
     const FACE_SCORE_MIN = 0.35;  // ลดลง: หาใบหน้าง่ายขึ้น ทั้งแสงน้อยและกล้องธรรมดา
     const FACE_REG_SAMPLES = 15;    // เก็บตัวอย่างเยอะไว้เพื่อความแม่นยำ
     const FACE_REG_SCORE_MIN = 0.45;
@@ -12159,7 +12159,7 @@
       faceMatcherDirty = false;
     }
 
-    // ---- Match face (self-only) — เร็วมาก: เทียบแค่ใบหน้าตัวเองที่ login อยู่ ----
+    // ---- Match face (self-only) — เทียบใบหน้าตัวเอง + ตรวจสอบว่าไม่ใช่คนอื่น ----
     function _matchFaceSelf(descriptor) {
       if (!CU || !CU.id) return null;
       const emp = db.employees.find(e => e._key === CU.id);
@@ -12170,6 +12170,18 @@
       const query = new Float32Array(descriptor);
       const minDist = Math.min(...descs.map(d => faceapi.euclideanDistance(new Float32Array(d), query)));
       if (minDist > FACE_MATCH_THRESHOLD) return null;
+
+      // ★ Cross-check: ตรวจว่าไม่ใช่ใบหน้าคนอื่นที่คล้ายกัน
+      const others = db.employees.filter(e => e._key !== emp._key && (e.faceDescriptors?.length > 0 || e.faceDescriptor));
+      for (const other of others) {
+        const oDescs = (other.faceDescriptors || [other.faceDescriptor])
+          .filter(d => Array.isArray(d) && d.length === 128);
+        if (!oDescs.length) continue;
+        const oDist = Math.min(...oDescs.map(d => faceapi.euclideanDistance(new Float32Array(d), query)));
+        // ถ้าคนอื่นใกล้กว่าหรือใกล้เคียง → ปฏิเสธ (อาจเป็นคนอื่นเอาหน้ามาสแกนแทน)
+        if (oDist <= minDist + 0.06) return null;
+      }
+
       return { emp, dist: minDist };
     }
 
@@ -12204,8 +12216,8 @@
         const otherDescs = (other.faceDescriptors || [other.faceDescriptor])
           .filter(d => Array.isArray(d) && d.length === 128);
         const otherMin = Math.min(...otherDescs.map(d => faceapi.euclideanDistance(new Float32Array(d), query)));
-        // Reject if another person is within 0.12 of best match (ambiguous identity — เดิม 0.08)
-        if (otherMin < minDist + 0.12 && otherMin <= FACE_MATCH_THRESHOLD) return null;
+        // Reject if another person is within 0.08 of best match (ambiguous identity)
+        if (otherMin < minDist + 0.08 && otherMin <= FACE_MATCH_THRESHOLD) return null;
       }
 
       if (minDist > FACE_MATCH_THRESHOLD) return null;
