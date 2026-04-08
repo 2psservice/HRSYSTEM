@@ -9913,7 +9913,12 @@
         <div style="background:#f8fafc;border-radius:12px;padding:12px 14px;border-left:4px solid ${r.status === 'approved' ? '#16a34a' : r.status === 'rejected' ? '#dc2626' : '#d97706'};">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
             <span style="font-size:13px;font-weight:700;color:#1e293b;">${r.type || '-'}</span>
-            ${statusBadge(r.status || 'pending')}
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${statusBadge(r.status || 'pending')}
+              ${r.status === 'pending' ? `<button onclick="empCancelLeave('${e._key}','${r._key}')"
+                style="background:#fff;border:1.5px solid #fca5a5;color:#dc2626;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;">
+                ยกเลิก</button>` : ''}
+            </div>
           </div>
           <div style="font-size:12px;color:#64748b;margin-bottom:4px;">${r.startDate || '-'} → ${r.endDate || '-'} &nbsp;|&nbsp; ${r.days || 0} วัน</div>
           ${r.totalDeduct > 0 ? `<div style="font-size:11px;color:#dc2626;font-weight:600;">หักคะแนน: -${r.totalDeduct}</div>` : ''}
@@ -9926,6 +9931,24 @@
       } catch (err) {
         document.getElementById('modal-body').innerHTML = '<div style="color:#dc2626;padding:16px;">เกิดข้อผิดพลาด: ' + err.message + '</div>';
       }
+    };
+
+    window.empCancelLeave = async function (empKey, reqId) {
+      if (!confirm('ยกเลิกคำขอลานี้?')) return;
+      showSync();
+      try {
+        // ตรวจสอบสถานะก่อน — ยกเลิกได้เฉพาะ pending เท่านั้น
+        const req = await fbGet(`/leaveRequests/${empKey}/${reqId}`);
+        if (req && req.status !== 'pending') {
+          hideSync();
+          alert('ไม่สามารถยกเลิกได้ เนื่องจากคำขอลานี้ได้รับการ' + (req.status === 'approved' ? 'อนุมัติ' : 'พิจารณา') + 'แล้ว');
+          return;
+        }
+        await fbDelete(`/leaveRequests/${empKey}/${reqId}`);
+        hideSync();
+        alert('✅ ยกเลิกคำขอลาสำเร็จ');
+        openLeaveHistModal(); // refresh list
+      } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
     };
 
     // =====================================================================
@@ -19529,6 +19552,10 @@ async function handle(req) {
               style="padding:9px 20px;background:#fee2e2;color:#dc2626;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:8px;">
               <i class="fas fa-times"></i> ไม่อนุมัติ
             </button>
+            <button onclick="lsDeleteLeaveReq('${r._empId}','${r._reqId}','${(r.empName||'').replace(/'/g,'')}')"
+              style="padding:7px 16px;background:#fff;border:1.5px solid #e2e8f0;color:#94a3b8;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;display:flex;align-items:center;gap:6px;">
+              <i class="fas fa-trash"></i> ลบ
+            </button>
           </div>
         </div>
       </div>`;
@@ -19667,10 +19694,30 @@ async function handle(req) {
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
             ${statusBadge}
             ${sub ? `<div style="font-size:10px;color:#94a3b8;">ส่งเมื่อ ${sub}</div>` : ''}
+            <button onclick="lsDeleteLeaveReq('${r._empId}','${r._reqId}','${(r.empName||'').replace(/'/g,'')}')"
+              style="margin-top:4px;background:#fff;border:1.5px solid #fca5a5;color:#dc2626;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;">
+              <i class="fas fa-trash" style="margin-right:3px;font-size:10px;"></i>ลบ
+            </button>
           </div>
         </div>
       </div>`;
       }).join('');
+    };
+
+    window.lsDeleteLeaveReq = async function (empId, reqId, empName) {
+      if (!confirm(`ลบรายการลาของ ${empName} ออกจากระบบ?\nไม่สามารถกู้คืนได้`)) return;
+      showSync();
+      try {
+        await fbDelete(`/leaveRequests/${empId}/${reqId}`);
+        hideSync();
+        lsToast('ลบรายการลาสำเร็จ', '#dc2626');
+        // ลบออกจาก cache + ลบ row ออกจากหน้า pending
+        _lsHistAllReqs = _lsHistAllReqs.filter(r => !(r._empId === empId && r._reqId === reqId));
+        const pendingRow = document.getElementById(`ls-req-${empId}-${reqId}`);
+        if (pendingRow) pendingRow.remove();
+        lsFilterLeaveHistory();
+        lsLoadApprovals(); // reload pending badge
+      } catch (e) { hideSync(); alert('ผิดพลาด: ' + e.message); }
     };
 
     window.lsApproveReq = async function (empId, reqId) {
