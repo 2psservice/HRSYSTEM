@@ -11720,12 +11720,12 @@
     //  2. Multi-Sample Variance — GPS จริงมี noise ต่ำ, Fake GPS บางตัวกระโดด
     //  3. Speed Plausibility — ถ้า location กระโดดไกลเกินไปจากครั้งที่แล้ว
     // ============================================================
-    const GPS_ACCURACY_SUSPICIOUS = 4;    // ≤ 4m = น่าสงสัย (GPS จริงในอาคารมักได้ 10-50m)
-    const GPS_ACCURACY_BLOCK = 2;    // ≤ 2m = บล็อกทันที (แทบเป็นไปไม่ได้ในการใช้งานจริง)
-    const GPS_SAMPLES = 3;    // จำนวนครั้งที่ดึง GPS เพื่อเปรียบเทียบ
-    const GPS_SAMPLE_INTERVAL = 800;  // ms ระหว่างแต่ละ sample
-    const GPS_VARIANCE_LIMIT = 0.00005; // ≈ 5m — Fake GPS มักได้ค่าตรงเป๊ะทุกครั้ง
-    const GPS_MAX_SPEED_MPS = 5;    // 5 m/s ≈ เดินเร็ว/วิ่ง — ถ้าเร็วกว่านี้ = teleport
+    const GPS_ACCURACY_SUSPICIOUS = 2;    // ≤ 2m = น่าสงสัย (ผ่อนจาก 4m → 2m เพราะมือถือรุ่นใหม่แม่นยำ)
+    const GPS_ACCURACY_BLOCK = 0.5;    // ≤ 0.5m = บล็อกทันที (เป็นไปไม่ได้จริงๆ)
+    const GPS_SAMPLES = 2;    // ลดจาก 3 → 2 เร็วขึ้น ไม่ต้องรอนาน
+    const GPS_SAMPLE_INTERVAL = 600;  // ms ระหว่างแต่ละ sample (ลดจาก 800)
+    const GPS_VARIANCE_LIMIT = 0.000005; // ผ่อนลง 10 เท่า — มือถือรุ่นใหม่ GPS นิ่งมาก
+    const GPS_MAX_SPEED_MPS = 15;    // 15 m/s — ผ่อนขึ้นเพราะ GPS กระโดดได้ตามธรรมชาติ
 
     // เก็บตำแหน่ง GPS สุดท้ายของแต่ละ device เพื่อตรวจ speed
     const _gpsHistory = {};  // { deviceId: { lat, lng, ts } }
@@ -11796,10 +11796,10 @@
         const latRange = Math.max(...latVars) - Math.min(...latVars);
         const lngRange = Math.max(...lngVars) - Math.min(...lngVars);
         const totalVariance = latRange + lngRange;
-        if (totalVariance === 0) {
+        // เฉพาะ ZERO_VARIANCE เท่านั้นที่น่าสงสัยจริงๆ (ค่าเป๊ะ 100% ทุก sample)
+        // LOW_VARIANCE ยกเลิก — มือถือรุ่นใหม่ GPS นิ่งมากเป็นเรื่องปกติ
+        if (totalVariance === 0 && samples.length >= 2) {
           fakeFlags.push({ code: 'ZERO_VARIANCE', msg: 'ตำแหน่ง GPS ซ้ำกันทุก sample — อาจเป็น Mock GPS' });
-        } else if (totalVariance < GPS_VARIANCE_LIMIT / 10) {
-          fakeFlags.push({ code: 'LOW_VARIANCE', msg: 'ตำแหน่ง GPS คงที่ผิดธรรมชาติ' });
         }
       }
 
@@ -11830,7 +11830,9 @@
       const g = gpsInAny(lat, lng);
       const isFakeSuspected = fakeFlags.length > 0;
       // บล็อกทันทีถ้ามี flag รุนแรง
-      const isHardBlock = fakeFlags.some(f => f.code === 'ACC_EXTREME' || f.code === 'ZERO_VARIANCE' || f.code === 'TELEPORT');
+      // บล็อกเฉพาะกรณีชัดเจนมากๆ — ACC_EXTREME เท่านั้น
+      // ZERO_VARIANCE, TELEPORT, ACC_HIGH = แค่เตือน ไม่บล็อก
+      const isHardBlock = fakeFlags.some(f => f.code === 'ACC_EXTREME');
 
       return {
         available: true,
