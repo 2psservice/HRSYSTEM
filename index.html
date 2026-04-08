@@ -5757,13 +5757,23 @@
     <!-- มาสาย banner -->
     <div id="alog-late-banner"></div>
 
+    ${CU.role === 'admin' ? `<!-- Bulk action bar -->
+    <div id="alog-bulk-bar" style="display:none;background:linear-gradient(135deg,#1e40af,#3b82f6);border-radius:14px;padding:14px 20px;margin-bottom:16px;color:#fff;display:none;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span id="alog-bulk-count" style="font-size:13px;font-weight:700;">เลือก 0 รายการ</span>
+        <button onclick="alogBulkEditTime()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;"><i class="fas fa-clock" style="margin-right:4px;"></i>แก้ไขเวลา</button>
+        <button onclick="alogBulkClearOut()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;"><i class="fas fa-times-circle" style="margin-right:4px;"></i>ยกเลิกเวลาออก</button>
+        <button onclick="alogBulkDelete()" style="background:#dc2626;border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;"><i class="fas fa-trash" style="margin-right:4px;"></i>ลบบันทึก</button>
+      </div>
+    </div>` : ''}
+
     <!-- Table -->
     <div style="background:#fff;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.06);overflow:hidden;">
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm" id="alog-table">
           <thead style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
             <tr>
-              ${['#', 'ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'สถานที่เข้างาน', 'เข้างาน', 'ออกงาน', 'สถานะ', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', '<span style="color:#dc2626">เบิกล่วงหน้า</span>', 'คงเหลือ', 'GPS', 'วิธี', ...(CU.role === 'admin' ? ['จัดการ'] : [])]
+              ${[...(CU.role === 'admin' ? ['<input type="checkbox" id="alog-check-all" onchange="alogToggleAll(this.checked)" style="width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;" title="เลือกทั้งหมด">'] : []), '#', 'ชื่อพนักงาน', 'สายงาน', 'หัวหน้างาน', 'สถานที่เข้างาน', 'เข้างาน', 'ออกงาน', 'สถานะ', 'OT (ชม.)', 'ค่าแรง', 'ค่า OT', 'รวม', '<span style="color:#dc2626">เบิกล่วงหน้า</span>', 'คงเหลือ', 'GPS', 'วิธี', ...(CU.role === 'admin' ? ['จัดการ'] : [])]
           .map(h => `<th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">${h}</th>`).join('')}
             </tr>
           </thead>
@@ -5775,7 +5785,7 @@
               ${(() => {
           const tAdv = recs.reduce((s, r) => s + sumAdvances(r.empId), 0);
           const tNet = tTotal - tAdv;
-          return `<td colspan="9" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${total} รายการ</td>
+          return `<td colspan="${CU.role === 'admin' ? 10 : 9}" style="padding:10px 14px;font-weight:700;font-size:13px;color:#475569;">รวม ${total} รายการ</td>
                 <td style="padding:10px 14px;font-weight:800;color:#16a34a;font-size:13px;">฿${tWage.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;color:#7c3aed;font-size:13px;">฿${tOT.toLocaleString()}</td>
                 <td style="padding:10px 14px;font-weight:800;color:#1d4ed8;font-size:13px;">฿${tTotal.toLocaleString()}</td>
@@ -5796,17 +5806,23 @@
     }
 
     function _buildAlogRows(recs) {
-      const colCount = CU.role === 'admin' ? 17 : 16;
+      const colCount = CU.role === 'admin' ? 18 : 16;
       if (!recs.length) return `<tr><td colspan="${colCount}" style="padding:32px;text-align:center;color:#94a3b8;font-size:14px;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i>ไม่มีข้อมูลการเข้างาน</td></tr>`;
       const dk = window._alogDk || todayStr;
+      // สร้าง fbKey map สำหรับ checkbox
+      const bucket = db.attendance[dk] || {};
+      const fbKeyMap = {};
+      Object.entries(bucket).forEach(([k, v]) => { fbKeyMap[v.empId + '|' + v.checkInTime] = k; });
       return recs.map((r, i) => {
         const methodIcon = r.checkInMethod === 'face' ? '😊' : r.checkInMethod === 'scanner' ? '🖐' : r.checkInMethod === 'gps_button' ? '📍' : '📱';
         const advAmt = sumAdvances(r.empId);
         const net = r.total - advAmt;
         const locName = r.locationName || (r.locationId ? (gpsLocations.find(l => l.id === r.locationId)?.name || r.locationId) : '') || (r.checkInMethod === 'scanner' || r.source === 'scanner' ? 'ระยอง' : '-');
+        const fbk = fbKeyMap[r.empId + '|' + r.checkInTime] || '';
         return `<tr style="border-bottom:1px solid #f1f5f9;transition:background .1s;${r._late ? 'background:#fff7f7;' : ''}"
       onmouseover="this.style.background='${r._late ? '#fef2f2' : '#f8fafc'}'"
       onmouseout="this.style.background='${r._late ? '#fff7f7' : ''}'">
+      ${CU.role === 'admin' ? '<td style="padding:10px 8px;text-align:center;"><input type="checkbox" class="alog-cb" data-fbkey="' + fbk + '" data-empname="' + (r.empName||'').replace(/"/g,'') + '" data-empid="' + r.empId + '" onchange="alogUpdateBulkBar()" style="width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;"></td>' : ''}
       <td style="padding:10px 14px;color:#94a3b8;font-size:12px;">${i + 1}</td>
       <td style="padding:10px 14px;font-weight:700;color:#1e293b;white-space:nowrap;">${r.empName}</td>
       <td style="padding:10px 14px;color:#64748b;font-size:12px;">${r.dept || '-'}</td>
@@ -12648,22 +12664,163 @@
       if (document.getElementById('alog-body')) _renderAttendanceLog(dateKey);
     };
 
+    // ── Bulk action helpers สำหรับตาราง attendance log ──
+    window.alogToggleAll = function (checked) {
+      document.querySelectorAll('.alog-cb').forEach(cb => { cb.checked = checked; });
+      alogUpdateBulkBar();
+    };
+
+    window.alogUpdateBulkBar = function () {
+      const n = document.querySelectorAll('.alog-cb:checked').length;
+      const bar = document.getElementById('alog-bulk-bar');
+      const cnt = document.getElementById('alog-bulk-count');
+      if (bar) bar.style.display = n > 0 ? '' : 'none';
+      if (cnt) cnt.textContent = 'เลือก ' + n + ' รายการ';
+      // sync header checkbox
+      const all = document.querySelectorAll('.alog-cb');
+      const hdr = document.getElementById('alog-check-all');
+      if (hdr) hdr.checked = all.length > 0 && n === all.length;
+    };
+
+    function _getSelectedAlogItems() {
+      return [...document.querySelectorAll('.alog-cb:checked')].map(cb => ({
+        fbKey: cb.dataset.fbkey, empName: cb.dataset.empname, empId: cb.dataset.empid
+      })).filter(x => x.fbKey);
+    }
+
+    window.alogBulkEditTime = function () {
+      const items = _getSelectedAlogItems();
+      if (!items.length) return;
+      const dk = window._alogDk || todayStr;
+      const body = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="background:#eff6ff;border-radius:12px;padding:12px 16px;font-size:13px;">
+        <span style="font-weight:700;color:#1e40af;">แก้ไขเวลาพร้อมกัน ${items.length} คน</span>
+        <div style="color:#3b82f6;margin-top:4px;font-size:12px;max-height:80px;overflow-y:auto;">${items.map(x => x.empName).join(', ')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เวลาเข้างาน</label>
+          <input id="bulk-in" type="time" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:14px;font-family:Sarabun,sans-serif;box-sizing:border-box;">
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px;">เว้นว่าง = ไม่แก้ไข</div>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เวลาออกงาน</label>
+          <input id="bulk-out" type="time" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:14px;font-family:Sarabun,sans-serif;box-sizing:border-box;">
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px;">เว้นว่าง = ไม่แก้ไข</div>
+        </div>
+      </div>
+      <div style="background:#fef9c3;border-radius:10px;padding:10px 12px;font-size:12px;color:#854d0e;">
+        <i class="fas fa-info-circle" style="margin-right:4px;"></i>กรอกเฉพาะช่องที่ต้องการแก้ไข ช่องที่เว้นว่างจะไม่เปลี่ยนแปลง
+      </div>
+    </div>`;
+      const footer = `
+    <button onclick="alogDoBulkEditTime()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-save mr-1"></i>บันทึกการแก้ไข ${items.length} รายการ</button>
+    <button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ยกเลิก</button>`;
+      openModal('แก้ไขเวลาพร้อมกัน', body, footer);
+    };
+
+    window.alogDoBulkEditTime = async function () {
+      const items = _getSelectedAlogItems();
+      const dk = window._alogDk || todayStr;
+      const inT = document.getElementById('bulk-in').value;
+      const outT = document.getElementById('bulk-out').value;
+      if (!inT && !outT) return alert('กรุณากรอกเวลาอย่างน้อย 1 ช่อง');
+      if (!confirm(`ยืนยันแก้ไขเวลา ${items.length} รายการ?`)) return;
+      showSync();
+      let ok = 0, fail = 0;
+      for (const item of items) {
+        const patch = { adminEditBy: CU.displayName, adminEditAt: Date.now() };
+        if (inT) patch.checkInTime = inT;
+        if (outT) patch.checkOutTime = outT;
+        try {
+          await fbPatch(`/attendance/${dk}/${item.fbKey}`, patch);
+          if (db.attendance[dk]?.[item.fbKey]) Object.assign(db.attendance[dk][item.fbKey], patch);
+          ok++;
+        } catch (_) { fail++; }
+      }
+      hideSync(); closeModal();
+      _renderAttendanceLog(dk);
+      if (typeof renderDashBody === 'function') renderDashBody(dk);
+      alert(`✅ แก้ไขสำเร็จ ${ok} รายการ${fail ? ' · ล้มเหลว ' + fail : ''}`);
+    };
+
+    window.alogBulkClearOut = async function () {
+      const items = _getSelectedAlogItems();
+      if (!items.length) return;
+      const dk = window._alogDk || todayStr;
+      if (!confirm(`ยกเลิกเวลาออกของ ${items.length} คน?\n${items.map(x => x.empName).join(', ')}`)) return;
+      showSync();
+      let ok = 0, fail = 0;
+      for (const item of items) {
+        try {
+          await fbPatch(`/attendance/${dk}/${item.fbKey}`, { checkOutTime: '', checkOutGps: null, checkOutDist: null });
+          if (db.attendance[dk]?.[item.fbKey]) {
+            db.attendance[dk][item.fbKey].checkOutTime = '';
+            db.attendance[dk][item.fbKey].checkOutGps = null;
+          }
+          ok++;
+        } catch (_) { fail++; }
+      }
+      hideSync();
+      _renderAttendanceLog(dk);
+      if (typeof renderDashBody === 'function') renderDashBody(dk);
+      alert(`✅ ยกเลิกเวลาออกสำเร็จ ${ok} รายการ${fail ? ' · ล้มเหลว ' + fail : ''}`);
+    };
+
+    window.alogBulkDelete = async function () {
+      const items = _getSelectedAlogItems();
+      if (!items.length) return;
+      const dk = window._alogDk || todayStr;
+      if (!confirm(`⚠️ ลบบันทึกการเข้างาน ${items.length} รายการ?\n${items.map(x => x.empName).join(', ')}\n\nไม่สามารถกู้คืนได้!`)) return;
+      showSync();
+      let ok = 0, fail = 0;
+      for (const item of items) {
+        try {
+          await fbDelete(`/attendance/${dk}/${item.fbKey}`);
+          if (db.attendance[dk]) delete db.attendance[dk][item.fbKey];
+          ok++;
+        } catch (_) { fail++; }
+      }
+      hideSync();
+      _renderAttendanceLog(dk);
+      if (typeof renderDashBody === 'function') renderDashBody(dk);
+      alert(`✅ ลบสำเร็จ ${ok} รายการ${fail ? ' · ล้มเหลว ' + fail : ''}`);
+    };
+
     // Admin เช็คชื่อให้พนักงานจากหน้า Dashboard (กรณีลืมสแกน)
+    // ── ตัดคำนำหน้าออก เพื่อเทียบเฉพาะชื่อจริง ──
+    function _stripTitle(name) {
+      return (name || '').replace(/^(นางสาว|น\.ส\.|นาย|นาง|ด\.ร\.|ดร\.|Mr\.|Mrs\.|Ms\.|Miss)\s*/i, '').trim();
+    }
+
     window.adminCheckInFor = async function (dateKey) {
-      const empOpts = [{ v: '', l: '-- เลือกพนักงาน --' }, ...db.employees.map(e => ({ v: e._key, l: e.name + ' (' + e.dept + ')' }))];
       const already = new Set(getAttendanceArray(dateKey).map(r => r.empId));
       const avail = db.employees.filter(e => !already.has(e._key));
       if (!avail.length) { alert('พนักงานทุกคนเช็คชื่อแล้ว'); return; }
-      const opts = [{ v: '', l: '-- เลือกพนักงาน --' }, ...avail.map(e => ({ v: e._key, l: e.name + ' (' + e.dept + ')' }))];
+      window._aciAvail = avail;
+      window._aciDateKey = dateKey;
       const locOpts = [{v:'', l:'-- เลือกสถานที่ --'}, ...gpsLocations.map(l => ({v:l.id, l:l.name + (l.workStart ? ' (' + l.workStart + '-' + (l.workEnd||'17:00') + ')' : '')}))];
       const body = `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">พนักงาน *</label>
-        ${Sel('aci-emp', opts)}
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">ค้นหาพนักงาน (พิมพ์ชื่อ หรือ นามสกุล)</label>
+        <div style="position:relative;">
+          <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;"></i>
+          <input id="aci-search" type="text" placeholder="พิมพ์ชื่อค้นหา เช่น สมชาย, ใจดี..."
+            oninput="aciFilterList()" autocomplete="off"
+            style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px 9px 34px;font-size:13px;font-family:Sarabun,sans-serif;box-sizing:border-box;outline:none;">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button onclick="aciSelectAll(true)" style="padding:5px 12px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;"><i class="fas fa-check-double" style="margin-right:4px;"></i>เลือกทั้งหมด</button>
+        <button onclick="aciSelectAll(false)" style="padding:5px 12px;background:#e2e8f0;color:#475569;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;">ยกเลิกทั้งหมด</button>
+        <span id="aci-count" style="font-size:12px;color:#64748b;margin-left:auto;">เลือก 0 คน</span>
+      </div>
+      <div id="aci-list" style="max-height:260px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;"><i class="fas fa-map-marker-alt" style="color:#0891b2;margin-right:4px;"></i>สถานที่เข้างาน</label>
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;"><i class="fas fa-map-marker-alt" style="color:#0891b2;margin-right:4px;"></i>สถานที่เข้างาน *</label>
         <select id="aci-loc" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;box-sizing:border-box;outline:none;background:#fff;cursor:pointer;">
           ${locOpts.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('')}
         </select>
@@ -12688,47 +12845,94 @@
       </div>
       <div style="background:#fef9c3;border-radius:10px;padding:10px 12px;font-size:12px;color:#854d0e;">
         <i class="fas fa-info-circle" style="margin-right:4px;"></i>
-        ระบบจะบันทึกว่า "เช็คชื่อโดย Admin" — ใช้เมื่อพนักงานลืมสแกน
+        เลือกพนักงานหลายคนพร้อมกันได้ (สูงสุด 100 คน) — ระบบจะบันทึกว่า "เช็คชื่อโดย Admin"
       </div>
     </div>`;
       const footer = `
-    <button onclick="adminDoCheckInFor('${dateKey}')"
+    <button onclick="adminDoCheckInFor()"
       class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg text-sm font-bold">
       <i class="fas fa-user-check mr-1"></i>เช็คชื่อให้พนักงาน
     </button>
     <button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ยกเลิก</button>`;
       openModal(`เช็คชื่อให้พนักงาน — ${fmtThai(dateKey)}`, body, footer);
+      aciFilterList();
     };
 
-    window.adminDoCheckInFor = async function (dateKey) {
-      const empKey = document.getElementById('aci-emp').value;
+    window.aciFilterList = function () {
+      const q = (document.getElementById('aci-search')?.value || '').trim().toLowerCase();
+      const listEl = document.getElementById('aci-list');
+      if (!listEl || !window._aciAvail) return;
+      let filtered = window._aciAvail;
+      if (q) {
+        filtered = filtered.filter(e => {
+          const full = e.name.toLowerCase();
+          const stripped = _stripTitle(e.name).toLowerCase();
+          const parts = stripped.split(/\s+/);
+          const firstName = parts[0] || '';
+          const lastName = parts.slice(1).join(' ');
+          return full.includes(q) || stripped.includes(q) || firstName.includes(q) || lastName.includes(q);
+        });
+      }
+      listEl.innerHTML = filtered.length
+        ? filtered.map(e => `<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:13px;" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="aci-cb" value="${e._key}" onchange="aciUpdateCount()" style="width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;">
+            <span style="font-weight:600;color:#1e293b;">${e.name}</span>
+            <span style="color:#94a3b8;font-size:11px;margin-left:auto;">${e.dept || '-'}</span>
+          </label>`).join('')
+        : '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:13px;">ไม่พบพนักงาน</div>';
+      aciUpdateCount();
+    };
+
+    window.aciSelectAll = function (checked) {
+      document.querySelectorAll('.aci-cb').forEach(cb => { cb.checked = checked; });
+      aciUpdateCount();
+    };
+
+    window.aciUpdateCount = function () {
+      const n = document.querySelectorAll('.aci-cb:checked').length;
+      const el = document.getElementById('aci-count');
+      if (el) el.textContent = 'เลือก ' + n + ' คน';
+    };
+
+    window.adminDoCheckInFor = async function () {
+      const dateKey = window._aciDateKey;
+      const selected = [...document.querySelectorAll('.aci-cb:checked')].map(cb => cb.value);
       const inT = document.getElementById('aci-in').value;
       const outT = document.getElementById('aci-out').value;
       const ot = parseFloat(document.getElementById('aci-ot').value) || 0;
       const locVal = document.getElementById('aci-loc').value;
-      if (!empKey) return alert('กรุณาเลือกพนักงาน');
+      if (!selected.length) return alert('กรุณาเลือกพนักงานอย่างน้อย 1 คน');
+      if (selected.length > 100) return alert('เลือกได้สูงสุด 100 คน');
       if (!inT) return alert('กรุณากรอกเวลาเข้างาน');
       if (!locVal) return alert('กรุณาเลือกสถานที่เข้างาน');
-      const emp = db.employees.find(e => e._key === empKey); if (!emp) return;
       const loc = gpsLocations.find(l => l.id === locVal);
-      const wage = emp.wage || db.wage.defaultWage;
-      const otPay = Math.round(ot * (db.wage.otRate || 75));
-      const rec = {
-        empId: emp._key, empName: emp.name, dept: emp.dept, sup: emp.sup, supId: emp.supId || '',
-        checkInTime: inT, otHours: ot, wage, otPay, total: wage + otPay,
-        gpsOk: true, distMeters: 0, timestamp: Date.now(),
-        checkInMethod: 'admin', adminEditBy: CU.displayName,
-        locationId: locVal, locationName: loc ? loc.name : locVal,
-        ...(outT ? { checkOutTime: outT, checkOutGps: true } : {})
-      };
+      if (!confirm(`ยืนยันเช็คชื่อให้พนักงาน ${selected.length} คน?`)) return;
       showSync();
-      const res = await fbPush(`/attendance/${dateKey}`, rec);
-      if (!db.attendance[dateKey]) db.attendance[dateKey] = {};
-      db.attendance[dateKey][res.name] = rec;
+      let success = 0, fail = 0;
+      for (const empKey of selected) {
+        const emp = db.employees.find(e => e._key === empKey);
+        if (!emp) { fail++; continue; }
+        const wage = emp.wage || db.wage.defaultWage;
+        const otPay = Math.round(ot * (db.wage.otRate || 75));
+        const rec = {
+          empId: emp._key, empName: emp.name, dept: emp.dept, sup: emp.sup, supId: emp.supId || '',
+          checkInTime: inT, otHours: ot, wage, otPay, total: wage + otPay,
+          gpsOk: true, distMeters: 0, timestamp: Date.now(),
+          checkInMethod: 'admin', adminEditBy: CU.displayName,
+          locationId: locVal, locationName: loc ? loc.name : locVal,
+          ...(outT ? { checkOutTime: outT, checkOutGps: true } : {})
+        };
+        try {
+          const res = await fbPush(`/attendance/${dateKey}`, rec);
+          if (!db.attendance[dateKey]) db.attendance[dateKey] = {};
+          db.attendance[dateKey][res.name] = rec;
+          success++;
+        } catch (_) { fail++; }
+      }
       hideSync();
       closeModal();
       renderDashBody(dateKey);
-      alert(`✅ เช็คชื่อให้ ${emp.name} สำเร็จ · เวลาเข้า ${inT}${outT ? ' · ออก ' + outT : ''}`);
+      alert(`✅ เช็คชื่อสำเร็จ ${success} คน${fail ? ' · ล้มเหลว ' + fail + ' คน' : ''}\nเวลาเข้า ${inT}${outT ? ' · ออก ' + outT : ''}`);
     };
 
     // ---- Face registration card helpers ----
