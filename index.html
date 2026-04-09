@@ -5728,6 +5728,13 @@
           <i class="fas fa-file-excel mr-1"></i>Export
         </button>
       </div>
+      ${CU.role === 'admin' ? `<div>
+        <div style="font-size:11px;font-weight:700;color:transparent;margin-bottom:4px;">.</div>
+        <button onclick="openImportHistExcel()"
+          style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;white-space:nowrap;">
+          <i class="fas fa-file-upload mr-1"></i>Import ย้อนหลัง
+        </button>
+      </div>` : ''}
     </div>
 
     <!-- Summary cards -->
@@ -12823,6 +12830,301 @@
       _renderAttendanceLog(dk);
       if (typeof renderDashBody === 'function') renderDashBody(dk);
       alert(`✅ ลบสำเร็จ ${ok} รายการ${fail ? ' · ล้มเหลว ' + fail : ''}`);
+    };
+
+    // =====================================================================
+    //  IMPORT ATTENDANCE ย้อนหลังจาก Excel
+    //  รองรับ 2 ฟอร์ม:
+    //  1) "รายชื่อพนักงานมาทำงาน" — แถว=พนักงาน, คอลัมน์=วันที่ 1-31
+    //  2) "BYD Salary" — แถว=วันที่, คอลัมน์=พนักงาน
+    // =====================================================================
+    window.openImportHistExcel = function () {
+      const body = `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เลือกฟอร์ม Excel</label>
+        <select id="imp-format" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;">
+          <option value="format1">รายชื่อพนักงานมาทำงาน (แถว=พนักงาน คอลัมน์=วันที่)</option>
+          <option value="format2">BYD Salary (แถว=วันที่ คอลัมน์=พนักงาน)</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">ปี (ค.ศ.)</label>
+          <input id="imp-year" type="number" value="2026" min="2020" max="2030"
+            style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:14px;font-family:Sarabun,sans-serif;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เดือน</label>
+          <select id="imp-month" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;">
+            <option value="01">มกราคม</option><option value="02">กุมภาพันธ์</option><option value="03">มีนาคม</option>
+            <option value="04">เมษายน</option><option value="05">พฤษภาคม</option><option value="06">มิถุนายน</option>
+            <option value="07">กรกฎาคม</option><option value="08">สิงหาคม</option><option value="09">กันยายน</option>
+            <option value="10">ตุลาคม</option><option value="11">พฤศจิกายน</option><option value="12">ธันวาคม</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เลือกไฟล์ Excel</label>
+        <input id="imp-file" type="file" accept=".xlsx,.xls"
+          style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;box-sizing:border-box;">
+      </div>
+      <div id="imp-preview" style="display:none;background:#f8fafc;border-radius:12px;padding:14px;max-height:300px;overflow-y:auto;font-size:12px;"></div>
+      <div style="background:#eff6ff;border-radius:10px;padding:10px 12px;font-size:12px;color:#1e40af;">
+        <i class="fas fa-info-circle" style="margin-right:4px;"></i>
+        <b>ฟอร์ม 1:</b> ตัวเลข (8, 9.5) = มาทำงาน | "ป่วย" = ลาป่วย | "กิจ" = ลากิจ | "-" = วันหยุด<br>
+        <b>ฟอร์ม 2:</b> ตัวเลข (600, 500) = มาทำงาน | "ลป" = ลาป่วย | "ลก" = ลากิจ | "ขาด" = ขาดงาน
+      </div>
+    </div>`;
+      const footer = `
+    <button onclick="parseImportExcel()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-search mr-1"></i>ดูตัวอย่าง</button>
+    <button id="imp-save-btn" onclick="saveImportExcel()" style="display:none;" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-upload mr-1"></i>นำเข้าข้อมูล</button>
+    <button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ยกเลิก</button>`;
+      openModal('นำเข้าข้อมูลย้อนหลังจาก Excel', body, footer);
+    };
+
+    // ตัดคำนำหน้า + ชื่อเล่น + ช่องว่างเกิน เพื่อ match กับ db
+    function _cleanName(raw) {
+      let s = (raw || '').trim();
+      s = s.replace(/\s*\(.*?\)\s*/g, ''); // ลบชื่อเล่นในวงเล็บ
+      s = s.replace(/^(นางสาว|น\.ส\.|นาย|นาง|น\.ส|นส|ด\.ร\.|ดร\.|Mr\.|Mrs\.|Ms\.)\s*/i, '');
+      s = s.replace(/\s+/g, ' ').trim();
+      return s;
+    }
+
+    function _matchEmpByName(rawName) {
+      const clean = _cleanName(rawName);
+      if (!clean) return null;
+      const parts = clean.split(' ');
+      const firstName = parts[0] || '';
+      const lastName = parts.slice(1).join(' ');
+
+      // ลอง exact match ก่อน
+      let found = db.employees.find(e => _cleanName(e.name) === clean);
+      if (found) return found;
+
+      // ลอง match ชื่อ + นามสกุลบางส่วน
+      found = db.employees.find(e => {
+        const eName = _cleanName(e.name);
+        const eParts = eName.split(' ');
+        return eParts[0] === firstName && lastName && eParts.slice(1).join(' ').includes(lastName.slice(0, 4));
+      });
+      if (found) return found;
+
+      // ลอง match แค่ชื่อจริง (ถ้ามีชื่อเดียว)
+      const byFirst = db.employees.filter(e => _cleanName(e.name).split(' ')[0] === firstName);
+      if (byFirst.length === 1) return byFirst[0];
+
+      return null;
+    }
+
+    window._impParsedData = []; // [{empKey, empName, date, type, hours, wage}]
+
+    window.parseImportExcel = function () {
+      const fileInput = document.getElementById('imp-file');
+      const format = document.getElementById('imp-format').value;
+      const year = document.getElementById('imp-year').value;
+      const month = document.getElementById('imp-month').value;
+      if (!fileInput.files.length) return alert('กรุณาเลือกไฟล์');
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ym = year + '-' + month;
+        const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+        const parsed = [];
+        const unmatchedNames = new Set();
+
+        if (format === 'format1') {
+          // ฟอร์ม 1: Sheet แรก, Row1=headers, Row2=day numbers, Row3+=data
+          const sn = wb.SheetNames[0];
+          const data = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
+          const dayRow = data[2] || [];
+          // หา column index สำหรับแต่ละวันที่
+          const dayColMap = {};
+          for (let c = 4; c < dayRow.length; c++) {
+            const d = parseInt(dayRow[c]);
+            if (d >= 1 && d <= 31) dayColMap[d] = c;
+          }
+          // วนแต่ละพนักงาน (Row 3+)
+          for (let r = 3; r < data.length; r++) {
+            const row = data[r];
+            const name = (row[1] || '').toString().trim();
+            if (!name || name === '') continue;
+            const emp = _matchEmpByName(name);
+            if (!emp) { unmatchedNames.add(name); continue; }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+              const col = dayColMap[day];
+              if (col === undefined) continue;
+              const val = row[col];
+              if (val === '' || val === undefined || val === null) continue;
+              const sv = String(val).trim().toLowerCase();
+              if (sv === '-' || sv === '') continue;
+
+              const dk = ym + '-' + String(day).padStart(2, '0');
+              const dow = new Date(parseInt(year), parseInt(month) - 1, day).getDay();
+              if (dow === 0 || dow === 6) continue; // ข้ามวันหยุด
+
+              if (sv === 'ป่วย' || sv === 'ลาป่วย') {
+                parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลาป่วย' });
+              } else if (sv === 'กิจ' || sv === 'ลากิจ') {
+                parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลากิจ' });
+              } else if (!isNaN(parseFloat(val)) && parseFloat(val) > 0) {
+                parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'work', hours: parseFloat(val) });
+              }
+            }
+          }
+        } else if (format === 'format2') {
+          // ฟอร์ม 2: หลาย Sheet (ข้าม mitsu), Row0-1=headers, Row2-3=ชื่อ-นามสกุล, Row4+=data (Row4[0]=วันที่)
+          for (const sn of wb.SheetNames) {
+            if (sn.toLowerCase() === 'mitsu') continue; // ข้าม sheet mitsu
+            const data = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
+            if (data.length < 5) continue;
+
+            // หาชื่อพนักงานจาก Row 2+3
+            const nameRow = data[2] || [];
+            const surnameRow = data[3] || [];
+            const empCols = [];
+            for (let c = 1; c < nameRow.length; c++) {
+              const n = (nameRow[c] || '').toString().trim();
+              const s = (surnameRow[c] || '').toString().trim();
+              if (!n && !s) continue;
+              const fullName = n + (s ? ' ' + s : '');
+              const emp = _matchEmpByName(fullName);
+              if (emp) empCols.push({ col: c, emp });
+              else if (n) unmatchedNames.add(fullName);
+            }
+
+            // วนแต่ละแถว (Row 4+) — Row[0] = วันที่
+            for (let r = 4; r < data.length; r++) {
+              const row = data[r];
+              const day = parseInt(row[0]);
+              if (!day || day < 1 || day > 31 || day > daysInMonth) continue;
+              const dk = ym + '-' + String(day).padStart(2, '0');
+              const dow = new Date(parseInt(year), parseInt(month) - 1, day).getDay();
+              if (dow === 0 || dow === 6) continue;
+
+              for (const { col, emp } of empCols) {
+                const val = row[col];
+                if (val === '' || val === undefined || val === null) continue;
+                const sv = String(val).trim().toLowerCase();
+                if (sv === '' || sv === '-') continue;
+
+                if (sv === 'ลป' || sv === 'ลาป่วย' || sv === 'ป่วย') {
+                  parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลาป่วย' });
+                } else if (sv === 'ลก' || sv === 'ลากิจ' || sv === 'กิจ') {
+                  parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลากิจ' });
+                } else if (sv === 'ขาด' || sv === 'ขาดงาน') {
+                  parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'absent' });
+                } else if (!isNaN(parseFloat(val)) && parseFloat(val) > 0) {
+                  parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'work', wage: parseFloat(val) });
+                }
+              }
+            }
+          }
+        }
+
+        window._impParsedData = parsed;
+
+        // แสดงตัวอย่าง
+        const prevEl = document.getElementById('imp-preview');
+        const workN = parsed.filter(r => r.type === 'work').length;
+        const leaveN = parsed.filter(r => r.type === 'leave').length;
+        const absentN = parsed.filter(r => r.type === 'absent').length;
+        const empSet = new Set(parsed.map(r => r.empKey));
+        const unmatchHtml = unmatchedNames.size > 0
+          ? `<div style="background:#fef2f2;border-radius:8px;padding:8px 12px;margin-top:8px;color:#dc2626;font-size:11px;"><b>ไม่พบพนักงานในระบบ ${unmatchedNames.size} ชื่อ:</b><br>${[...unmatchedNames].join(', ')}</div>` : '';
+
+        prevEl.style.display = '';
+        prevEl.innerHTML = `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="background:#dcfce7;color:#15803d;padding:4px 12px;border-radius:20px;font-weight:700;">มาทำงาน ${workN} วัน</span>
+            <span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-weight:700;">ลา ${leaveN} วัน</span>
+            <span style="background:#fee2e2;color:#dc2626;padding:4px 12px;border-radius:20px;font-weight:700;">ขาด ${absentN} วัน</span>
+            <span style="background:#eff6ff;color:#1d4ed8;padding:4px 12px;border-radius:20px;font-weight:700;">พนักงาน ${empSet.size} คน</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <tr style="background:#1e293b;color:#fff;"><th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">ชื่อ</th><th style="padding:6px 8px;">วันที่</th><th style="padding:6px 8px;">ประเภท</th><th style="padding:6px 8px;">รายละเอียด</th></tr>
+            ${parsed.slice(0, 50).map((r, i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'};border-bottom:1px solid #f1f5f9;">
+              <td style="padding:4px 8px;">${i + 1}</td>
+              <td style="padding:4px 8px;font-weight:600;">${r.empName}</td>
+              <td style="padding:4px 8px;">${r.date}</td>
+              <td style="padding:4px 8px;"><span style="padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${r.type === 'work' ? '#dcfce7;color:#15803d' : r.type === 'leave' ? '#fef3c7;color:#92400e' : '#fee2e2;color:#dc2626'}">${r.type === 'work' ? 'มาทำงาน' : r.type === 'leave' ? r.leaveType : 'ขาดงาน'}</span></td>
+              <td style="padding:4px 8px;">${r.type === 'work' ? (r.hours ? r.hours + ' ชม.' : '฿' + (r.wage || 0)) : '-'}</td>
+            </tr>`).join('')}
+            ${parsed.length > 50 ? '<tr><td colspan="5" style="padding:8px;text-align:center;color:#94a3b8;">... แสดง 50 จาก ' + parsed.length + ' รายการ</td></tr>' : ''}
+          </table>
+          ${unmatchHtml}`;
+
+        document.getElementById('imp-save-btn').style.display = parsed.length ? '' : 'none';
+      };
+      reader.readAsArrayBuffer(fileInput.files[0]);
+    };
+
+    window.saveImportExcel = async function () {
+      const parsed = window._impParsedData;
+      if (!parsed || !parsed.length) return alert('ไม่มีข้อมูล');
+      if (!confirm(`นำเข้าข้อมูล ${parsed.length} รายการ?\nข้อมูลที่มีอยู่แล้วจะไม่ถูกเขียนทับ`)) return;
+      showSync();
+      let addedWork = 0, addedLeave = 0, skipped = 0, fail = 0;
+
+      for (const r of parsed) {
+        try {
+          if (r.type === 'work') {
+            // ตรวจว่ามี record แล้วไหม
+            const existing = db.attendance[r.date] ? Object.values(db.attendance[r.date]).find(a => a.empId === r.empKey) : null;
+            if (existing) { skipped++; continue; }
+            const emp = db.employees.find(e => e._key === r.empKey);
+            const wage = r.wage || emp?.wage || db.wage.defaultWage || 0;
+            const rec = {
+              empId: r.empKey, empName: r.empName, dept: r.dept || '', sup: emp?.sup || '', supId: emp?.supId || '',
+              checkInTime: '08:00', otHours: 0, wage, otPay: 0, total: wage,
+              gpsOk: true, distMeters: 0, timestamp: Date.now(),
+              checkInMethod: 'import', adminEditBy: CU.displayName,
+              locationId: '', locationName: ''
+            };
+            if (r.hours && r.hours > 8) {
+              const otH = Math.round((r.hours - 8) * 10) / 10;
+              rec.otHours = otH;
+              rec.otPay = Math.round(otH * (db.wage.otRate || 75));
+              rec.total = wage + rec.otPay;
+              rec.checkOutTime = (() => {
+                const mins = Math.round(r.hours * 60);
+                const h = 8 + Math.floor(mins / 60);
+                const m = mins % 60;
+                return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+              })();
+            } else {
+              rec.checkOutTime = '17:00';
+            }
+            const res = await fbPush(`/attendance/${r.date}`, rec);
+            if (!db.attendance[r.date]) db.attendance[r.date] = {};
+            db.attendance[r.date][res.name] = rec;
+            addedWork++;
+          } else if (r.type === 'leave') {
+            // สร้าง leave request (approved)
+            const existLeaves = await fbGet(`/leaveRequests/${r.empKey}`);
+            const alreadyExists = existLeaves ? Object.values(existLeaves).some(lv => lv.startDate === r.date && lv.type === r.leaveType) : false;
+            if (alreadyExists) { skipped++; continue; }
+            await fbPush(`/leaveRequests/${r.empKey}`, {
+              empId: r.empKey, empName: r.empName, dept: r.dept || '',
+              type: r.leaveType, deductPerDay: 0, startDate: r.date, endDate: r.date, days: 1, totalDeduct: 0,
+              reason: 'นำเข้าจาก Excel', status: 'approved',
+              submittedAt: new Date().toISOString(), approvedAt: new Date().toISOString(), approvedBy: 'Import'
+            });
+            addedLeave++;
+          }
+          // type === 'absent' → ไม่ต้องบันทึก ระบบจะนับขาดเองอัตโนมัติ
+        } catch (_) { fail++; }
+      }
+
+      hideSync();
+      closeModal();
+      window._impParsedData = [];
+      const dk = window._alogDk || todayStr;
+      if (typeof _renderAttendanceLog === 'function') _renderAttendanceLog(dk);
+      alert(`✅ นำเข้าข้อมูลสำเร็จ!\n• มาทำงาน: +${addedWork} วัน\n• ลา: +${addedLeave} วัน\n• ข้ามซ้ำ: ${skipped} รายการ${fail ? '\n• ผิดพลาด: ' + fail : ''}`);
     };
 
     // Admin เช็คชื่อให้พนักงานจากหน้า Dashboard (กรณีลืมสแกน)
