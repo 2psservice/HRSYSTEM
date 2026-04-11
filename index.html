@@ -6179,12 +6179,15 @@
       mc.innerHTML = `
   <div style="max-width:1100px;margin:0 auto;padding:0 0 60px;">
     <!-- Sub-tab bar -->
-    <div style="display:flex;gap:4px;background:#e5e7eb;border-radius:12px;padding:4px;margin-bottom:20px;width:fit-content;">
+    <div style="display:flex;gap:4px;background:#e5e7eb;border-radius:12px;padding:4px;margin-bottom:20px;width:fit-content;flex-wrap:wrap;">
       <button onclick="reShowSubTab('search')" id="re-sub-search" style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:#fff;color:#1d4ed8;box-shadow:0 1px 4px rgba(0,0,0,.1);">
         <i class="fas fa-search mr-2"></i>ค้นหารายบุคคล
       </button>
       <button onclick="reShowSubTab('summary')" id="re-sub-summary" style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
         <i class="fas fa-chart-bar mr-2"></i>สรุปภาพรวมพนักงาน
+      </button>
+      <button onclick="reShowSubTab('calendar')" id="re-sub-calendar" style="padding:8px 20px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:Sarabun,sans-serif;background:transparent;color:#64748b;">
+        <i class="fas fa-calendar-alt mr-2"></i>ปฏิทินพนักงาน
       </button>
     </div>
 
@@ -6247,11 +6250,35 @@
       <div id="re-sum-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px;"></div>
       <div id="re-sum-table" style="background:#fff;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;"></div>
     </div>
+
+    <!-- Tab 3: ปฏิทินพนักงาน -->
+    <div id="re-pane-calendar" style="display:none;">
+      <div style="background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div style="font-size:16px;font-weight:700;color:#1e293b;"><i class="fas fa-calendar-alt" style="color:#7c3aed;margin-right:8px;"></i>ปฏิทินการทำงานพนักงาน</div>
+          <div style="position:relative;">
+            <i class="fas fa-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none;"></i>
+            <input id="re-cal-search" type="text" placeholder="พิมพ์ชื่อพนักงาน..." oninput="reCalFilterEmp(this.value)" autocomplete="off"
+              style="padding:9px 12px 9px 34px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;width:240px;">
+            <div id="re-cal-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:200;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.10);max-height:260px;overflow-y:auto;margin-top:4px;"></div>
+          </div>
+        </div>
+        <div id="re-cal-selected" style="display:none;margin-top:12px;"></div>
+      </div>
+      <div style="max-width:520px;margin:0 auto;">
+        <div id="re-cal-wrap">
+          <div style="background:#fff;border-radius:16px;padding:40px 20px;text-align:center;color:#94a3b8;box-shadow:0 1px 4px rgba(0,0,0,.07);">
+            <i class="fas fa-calendar-alt" style="font-size:32px;margin-bottom:10px;display:block;"></i>
+            <div style="font-size:13px;">เลือกพนักงานเพื่อดูปฏิทิน</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>`;
     }
 
     window.reShowSubTab = function (tab) {
-      ['search', 'summary'].forEach(t => {
+      ['search', 'summary', 'calendar'].forEach(t => {
         const pane = document.getElementById('re-pane-' + t);
         const btn = document.getElementById('re-sub-' + t);
         if (pane) pane.style.display = t === tab ? '' : 'none';
@@ -6262,6 +6289,55 @@
         }
       });
       if (tab === 'summary') loadEmpSummary();
+    };
+
+    // ── ปฏิทินพนักงาน (admin) ── ใช้ renderEmpCal() ตัวเดียวกับหน้าพนักงาน
+    window.reCalFilterEmp = function (q) {
+      const drop = document.getElementById('re-cal-drop');
+      if (!drop) return;
+      const qq = (q || '').trim().toLowerCase();
+      if (!qq) { drop.style.display = 'none'; return; }
+      const matches = db.employees.filter(e => {
+        const n = (e.name || '').toLowerCase();
+        const dept = (e.dept || '').toLowerCase();
+        return n.includes(qq) || dept.includes(qq);
+      }).slice(0, 30);
+      if (!matches.length) {
+        drop.innerHTML = `<div style="padding:16px;color:#94a3b8;font-size:12px;text-align:center;">ไม่พบพนักงาน</div>`;
+        drop.style.display = '';
+        return;
+      }
+      drop.innerHTML = matches.map(e => `
+        <div onclick="reCalSelectEmp('${e._key}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+          <div style="font-weight:700;color:#1e293b;">${e.name}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">${e.dept || '-'}</div>
+        </div>`).join('');
+      drop.style.display = '';
+    };
+
+    window.reCalSelectEmp = function (empKey) {
+      const e = db.employees.find(x => x._key === empKey);
+      if (!e) return;
+      const drop = document.getElementById('re-cal-drop');
+      if (drop) drop.style.display = 'none';
+      const search = document.getElementById('re-cal-search');
+      if (search) search.value = e.name;
+      const sel = document.getElementById('re-cal-selected');
+      if (sel) {
+        sel.style.display = '';
+        sel.innerHTML = `<div style="display:inline-flex;align-items:center;gap:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:8px 14px;">
+          <div style="width:34px;height:34px;border-radius:50%;background:#3b82f6;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;">${(e.name || '?').charAt(0)}</div>
+          <div>
+            <div style="font-size:13px;font-weight:800;color:#1e293b;">${e.name}</div>
+            <div style="font-size:11px;color:#64748b;">${e.dept || '-'}</div>
+          </div>
+        </div>`;
+      }
+      // reset month เป็นเดือนปัจจุบัน
+      const now = new Date();
+      window._calYear = now.getFullYear();
+      window._calMonth = now.getMonth() + 1;
+      renderEmpCal(empKey, 're-cal-wrap');
     };
 
     let _empSummaryData = [];
@@ -6291,8 +6367,8 @@
 
       const results = [];
       for (const emp of db.employees) {
-        let workDays = 0, lateDays = 0, totalHrs = 0, otHrs = 0;
-        const detailWork = [], detailLate = [], detailAbsent = [], detailOT = [];
+        let workDays = 0, lateDays = 0, earlyDays = 0, totalHrs = 0, otHrs = 0;
+        const detailWork = [], detailLate = [], detailEarly = [], detailAbsent = [], detailOT = [];
         for (let d = 1; d <= daysInMonth; d++) {
           const dk = month + '-' + String(d).padStart(2, '0');
           const dt = new Date(parseInt(yearStr), parseInt(monStr) - 1, d);
@@ -6308,6 +6384,14 @@
               lateDays++;
               detailLate.push({ date: dk, checkIn: rec.checkInTime, workStart: lateInfo.workStart || '-', mins: lateInfo.minutesLate || 0, location: rec.locationName || '-' });
             }
+            // ตรวจออกก่อนเวลา (ให้ตรงกับหน้าพนักงาน)
+            if (rec.checkOutTime) {
+              const earlyInfo = checkEarlyOut(emp, rec.checkOutTime, rec.locationId);
+              if (earlyInfo.early) {
+                earlyDays++;
+                detailEarly.push({ date: dk, checkOut: rec.checkOutTime, workEnd: earlyInfo.workEnd || '-', mins: earlyInfo.minutesEarly || 0 });
+              }
+            }
             if (rec.checkInTime && rec.checkOutTime) {
               const [ih, im] = rec.checkInTime.split(':').map(Number);
               const [oh, om] = rec.checkOutTime.split(':').map(Number);
@@ -6317,22 +6401,25 @@
             const recOT = rec.otHours || 0;
             otHrs += recOT;
             if (recOT > 0) detailOT.push({ date: dk, hours: recOT });
-          } else if (!isWeekend) {
-            // จะเช็คว่าลาหรือขาดทีหลัง
+          } else if (!isWeekend && dk < todayStr) {
+            // ★ นับขาดเฉพาะวันที่ผ่านมาแล้ว (ไม่นับวันนี้และอนาคต)
             detailAbsent.push({ date: dk });
           }
         }
 
-        // Leave count (approved only, this month)
+        // Leave count (approved only, this month) + totalDeduct สำหรับคะแนน
         let leaveDays = 0;
+        let leaveDeduct = 0;
         const detailLeave = [];
         const empLeaves = allLeaves[emp._key];
         if (empLeaves && typeof empLeaves === 'object') {
           Object.values(empLeaves).forEach(lv => {
-            if (lv.status !== 'approved') return;
+            // ตรงกับหน้าพนักงาน — นับคำขอที่ไม่ถูก reject
+            if (lv.status === 'rejected') return;
             if (!lv.startDate || !lv.startDate.startsWith(month)) return;
             leaveDays += (lv.days || 1);
-            detailLeave.push({ date: lv.startDate, endDate: lv.endDate || lv.startDate, type: lv.leaveType || lv.type || '-', days: lv.days || 1, reason: lv.reason || '-' });
+            leaveDeduct += (Number(lv.totalDeduct) || 0);
+            detailLeave.push({ date: lv.startDate, endDate: lv.endDate || lv.startDate, type: lv.leaveType || lv.type || '-', days: lv.days || 1, reason: lv.reason || '-', deduct: lv.totalDeduct || 0 });
           });
         }
 
@@ -6347,15 +6434,21 @@
         const filteredAbsent = detailAbsent.filter(a => !leaveDateSet.has(a.date));
         const absentDays = filteredAbsent.length;
 
-        const score = Math.max(0, Math.min(100, 100 - (absentDays * 5) - (lateDays * 2) - (leaveDays * 1)));
+        // ★ คะแนน: ใช้สูตรเดียวกับหน้าพนักงาน
+        //   = 100 − (leave totalDeduct) − (late×2) − (early×2)
+        const lateDeduct = lateDays * 2;
+        const earlyDeduct = earlyDays * 2;
+        const totalDeduct = leaveDeduct + lateDeduct + earlyDeduct;
+        const score = Math.max(0, 100 - totalDeduct);
 
         results.push({
           emp, name: emp.name, dept: emp.dept || '-', empKey: emp._key,
-          workDays, lateDays, leaveDays, absentDays,
+          workDays, lateDays, earlyDays, leaveDays, absentDays,
+          leaveDeduct, lateDeduct, earlyDeduct, totalDeduct,
           totalHrs: Math.round(totalHrs * 10) / 10,
           otHrs: Math.round(otHrs * 10) / 10,
           score,
-          detailWork, detailLate, detailLeave, detailAbsent: filteredAbsent, detailOT
+          detailWork, detailLate, detailEarly, detailLeave, detailAbsent: filteredAbsent, detailOT
         });
       }
 
@@ -15489,6 +15582,8 @@ async function handle(req) {
       const now = new Date();
       window._calYear = now.getFullYear();
       window._calMonth = now.getMonth() + 1; // 1-based
+      window._calEmpKey = CU.id; // ★ reset เป็นตัวเองทุกครั้งที่เข้าหน้านี้
+      window._calWrapId = 'cal-wrap';
       mc.innerHTML = `
   <div style="max-width:520px;margin:0 auto;padding:14px 10px 60px;">
     <div style="font-size:16px;font-weight:700;color:#1d1d1f;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
@@ -15496,14 +15591,17 @@ async function handle(req) {
     </div>
     <div id="cal-wrap"></div>
   </div>`;
-      renderEmpCal();
+      renderEmpCal(CU.id, 'cal-wrap');
     }
 
-    async function renderEmpCal() {
-      const wrap = document.getElementById('cal-wrap'); if (!wrap) return;
+    async function renderEmpCal(empKeyArg, wrapId) {
+      const wrap = document.getElementById(wrapId || 'cal-wrap'); if (!wrap) return;
       wrap.innerHTML = `<div style="display:flex;justify-content:center;padding:32px;"><div class="loading-spinner" style="width:28px;height:28px;border-width:3px;"></div></div>`;
 
-      const e = db.employees.find(x => x._key === CU.id); if (!e) return;
+      const empKey = empKeyArg || window._calEmpKey || CU.id;
+      window._calEmpKey = empKey;
+      window._calWrapId = wrapId || 'cal-wrap';
+      const e = db.employees.find(x => x._key === empKey); if (!e) return;
       const dept = db.departments?.find?.(d => d.name === e.dept || d._key === e.dept);
       const shiftIn = dept?.workStart || '08:00';
       const shiftOut = dept?.workEnd || '17:00';
@@ -15561,8 +15659,9 @@ async function handle(req) {
 
       const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
-      // Summary counters
+      // Summary counters + detail arrays (for clickable cards)
       let sumWork = 0, sumLate = 0, sumEarly = 0, sumLeave = 0, sumAbsent = 0, sumOT = 0;
+      const detWork = [], detLate = [], detEarly = [], detLeave = [], detAbsent = [], detOT = [];
 
       let cells = '';
       // Headers
@@ -15594,31 +15693,7 @@ async function handle(req) {
         const isLate = rec && ciMin !== null && locSiMin !== null && ciMin > locSiMin;
         const isEarly = rec && coMin !== null && locSoMin !== null && coMin < locSoMin;
 
-        // Accumulate summary (only up to today)
-        if (d <= cutoffD) {
-          if (rec) { sumWork++; if (isLate) sumLate++; if (isEarly) sumEarly++; if ((rec.otPay || 0) > 0) sumOT++; }
-          else if (lv) sumLeave++;
-          else if (isWorkday) sumAbsent++;
-        }
-
-        // Determine cell type
-        let cellType = 'empty'; // empty / work / leave / weekend / today
-        if (rec) cellType = 'work';
-        if (lv && !rec) cellType = 'leave';
-        if (isHoliday && !rec && !lv) cellType = 'weekend';
-        if (isToday) cellType = 'today';
-
-        // Colors
-        const styles = {
-          work: { bg: '#d1fae5', border: '#6ee7b7', dayCol: '#064e3b', textCol: '#065f46' },
-          leave: { bg: '#fce7f3', border: '#f9a8d4', dayCol: '#831843', textCol: '#9d174d' },
-          weekend: { bg: '#fee2e2', border: '#fca5a5', dayCol: '#b91c1c', textCol: '#dc2626' },
-          empty: { bg: '#f8fafc', border: '#e2e8f0', dayCol: '#94a3b8', textCol: '#94a3b8' },
-          today: { bg: '#d1fae5', border: '#34d399', dayCol: '#064e3b', textCol: '#065f46' },
-        };
-        const s = styles[cellType] || styles.empty;
-
-        // ── สถานที่เข้างาน ──
+        // ── สถานที่เข้างาน ── (ต้องมาก่อน accumulate block เพราะถูกใช้ใน detWork)
         let locLabel = '';
         if (rec) {
           locLabel = rec.locationName || '';
@@ -15627,6 +15702,56 @@ async function handle(req) {
             locLabel = _loc?.name || '';
           }
         }
+
+        // Accumulate summary + details (only up to today)
+        if (d <= cutoffD) {
+          if (rec) {
+            sumWork++;
+            detWork.push({ dk, checkIn: rec.checkInTime || '-', checkOut: rec.checkOutTime || '-', location: locLabel, wage: rec.wage || 0 });
+            if (isLate) {
+              sumLate++;
+              const lateMin = ciMin - locSiMin;
+              detLate.push({ dk, checkIn: rec.checkInTime, workStart: locWT?.workStart || shiftIn, mins: lateMin });
+            }
+            if (isEarly) {
+              sumEarly++;
+              const earlyMin = locSoMin - coMin;
+              detEarly.push({ dk, checkOut: rec.checkOutTime, workEnd: locWT?.workEnd || shiftOut, mins: earlyMin });
+            }
+            if ((rec.otPay || 0) > 0 || (rec.otHours || 0) > 0) {
+              sumOT++;
+              detOT.push({ dk, hours: rec.otHours || 0, pay: rec.otPay || 0 });
+            }
+          }
+          else if (lv) {
+            sumLeave++;
+            detLeave.push({ dk, type: lv.type || '-', reason: lv.reason || '', deduct: lv.totalDeduct || 0 });
+          }
+          else if (isWorkday) {
+            sumAbsent++;
+            detAbsent.push({ dk });
+          }
+        }
+
+        // Determine cell type
+        let cellType = 'empty'; // empty / work / leave / absent / weekend / today
+        if (rec) cellType = 'work';
+        if (lv && !rec) cellType = 'leave';
+        if (isHoliday && !rec && !lv) cellType = 'weekend';
+        // ★ ขาดงาน — วันทำงานที่ผ่านมาแล้ว ไม่มี rec และไม่มี leave
+        if (isWorkday && !rec && !lv && d <= cutoffD) cellType = 'absent';
+        if (isToday && rec) cellType = 'today';
+
+        // Colors
+        const styles = {
+          work: { bg: '#d1fae5', border: '#6ee7b7', dayCol: '#064e3b', textCol: '#065f46' },
+          leave: { bg: '#fce7f3', border: '#f9a8d4', dayCol: '#831843', textCol: '#9d174d' },
+          absent: { bg: '#fecaca', border: '#dc2626', dayCol: '#7f1d1d', textCol: '#991b1b' },
+          weekend: { bg: '#fee2e2', border: '#fca5a5', dayCol: '#b91c1c', textCol: '#dc2626' },
+          empty: { bg: '#f8fafc', border: '#e2e8f0', dayCol: '#94a3b8', textCol: '#94a3b8' },
+          today: { bg: '#d1fae5', border: '#34d399', dayCol: '#064e3b', textCol: '#065f46' },
+        };
+        const s = styles[cellType] || styles.empty;
 
         // ── ประเภทการเข้างาน ──
         const method = rec?.checkInMethod || rec?.checkinMethod || '';
@@ -15638,6 +15763,8 @@ async function handle(req) {
           subLabel2 = rec.checkOutTime || '';
         } else if (lv) {
           subLabel = (lv.type || '').length > 4 ? (lv.type || '').slice(0, 4) + '…' : (lv.type || '');
+        } else if (cellType === 'absent') {
+          subLabel = 'ขาดงาน';
         } else if (isHoliday) {
           subLabel = specialHolMap[dk] ? (specialHolMap[dk].length > 4 ? specialHolMap[dk].slice(0, 4) + '…' : specialHolMap[dk]) : 'หยุด';
         }
@@ -15693,34 +15820,37 @@ async function handle(req) {
       const tW = recs.reduce((s, r) => s + r.wage, 0);
       const tO = recs.reduce((s, r) => s + r.otPay, 0);
 
+      // เก็บ detail arrays ไว้ให้ popup เรียกใช้
+      window._calDetail = { work: detWork, late: detLate, early: detEarly, leave: detLeave, absent: detAbsent, ot: detOT, empName: e.name };
+
       wrap.innerHTML = `
   <!-- Calendar card -->
   <div style="background:#fff;border-radius:20px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:14px;">
     <!-- Summary strip -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #f1f5f9;">
-      <div style="padding:12px 8px;text-align:center;border-right:1px solid #f1f5f9;">
+      <div onclick="showCalSumDetail('work')" style="padding:12px 8px;text-align:center;border-right:1px solid #f1f5f9;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:22px;font-weight:900;color:#16a34a;line-height:1;">${sumWork}</div>
         <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:8px;height:8px;background:#d1fae5;border:1.5px solid #6ee7b7;border-radius:2px;"></div>มาทำงาน</div>
       </div>
-      <div style="padding:12px 8px;text-align:center;border-right:1px solid #f1f5f9;">
+      <div onclick="showCalSumDetail('leave')" style="padding:12px 8px;text-align:center;border-right:1px solid #f1f5f9;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:22px;font-weight:900;color:#9d174d;line-height:1;">${sumLeave}</div>
         <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:8px;height:8px;background:#fce7f3;border:1.5px solid #f9a8d4;border-radius:2px;"></div>วันลา</div>
       </div>
-      <div style="padding:12px 8px;text-align:center;">
+      <div onclick="showCalSumDetail('absent')" style="padding:12px 8px;text-align:center;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:22px;font-weight:900;color:#dc2626;line-height:1;">${sumAbsent}</div>
-        <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:8px;height:8px;background:#fee2e2;border:1.5px solid #fca5a5;border-radius:2px;"></div>ขาด</div>
+        <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:8px;height:8px;background:#fecaca;border:1.5px solid #dc2626;border-radius:2px;"></div>ขาด</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #f1f5f9;">
-      <div style="padding:10px 8px;text-align:center;border-right:1px solid #f1f5f9;">
+      <div onclick="showCalSumDetail('late')" style="padding:10px 8px;text-align:center;border-right:1px solid #f1f5f9;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:18px;font-weight:800;color:#f97316;line-height:1;">${sumLate}</div>
         <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:6px;height:6px;background:#f97316;border-radius:50%;"></div>มาสาย</div>
       </div>
-      <div style="padding:10px 8px;text-align:center;border-right:1px solid #f1f5f9;">
+      <div onclick="showCalSumDetail('early')" style="padding:10px 8px;text-align:center;border-right:1px solid #f1f5f9;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:18px;font-weight:800;color:#7c3aed;line-height:1;">${sumEarly}</div>
         <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="width:6px;height:6px;background:#7c3aed;border-radius:50%;"></div>ออกก่อน</div>
       </div>
-      <div style="padding:10px 8px;text-align:center;">
+      <div onclick="showCalSumDetail('ot')" style="padding:10px 8px;text-align:center;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="font-size:18px;font-weight:800;color:#1d4ed8;line-height:1;">${sumOT}</div>
         <div style="font-size:10px;color:#64748b;font-weight:600;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:4px;"><div style="background:#3b82f6;color:#fff;font-size:8px;font-weight:700;border-radius:3px;padding:0 3px;line-height:13px;">OT</div>วันที่มี OT</div>
       </div>
@@ -15740,7 +15870,8 @@ async function handle(req) {
     <!-- Legend -->
     <div style="display:flex;flex-wrap:wrap;gap:10px 16px;padding:10px 16px 16px;border-top:1px solid #f1f5f9;">
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#d1fae5;border:1.5px solid #6ee7b7;border-radius:3px;"></div>มาทำงาน</div>
-      <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fce7f3;border:1.5px solid #f9a8d4;border-radius:3px;"></div>ขาด/ลา/โทษ</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fce7f3;border:1.5px solid #f9a8d4;border-radius:3px;"></div>ลา</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fecaca;border:1.5px solid #dc2626;border-radius:3px;"></div>ขาดงาน</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:12px;height:12px;background:#fee2e2;border:1.5px solid #fca5a5;border-radius:3px;"></div>วันหยุด</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="width:6px;height:6px;background:#f97316;border-radius:50%;"></div>สาย</div>
       <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#374151;font-weight:600;"><div style="background:#3b82f6;color:#fff;font-size:8px;font-weight:700;border-radius:3px;padding:0 3px;line-height:14px;">OT</div>มีโอที</div>
@@ -15769,7 +15900,112 @@ async function handle(req) {
       window._calMonth += dir;
       if (window._calMonth > 12) { window._calMonth = 1; window._calYear++; }
       if (window._calMonth < 1) { window._calMonth = 12; window._calYear--; }
-      renderEmpCal();
+      renderEmpCal(window._calEmpKey, window._calWrapId);
+    };
+
+    // แสดง popup รายละเอียดตามการคลิกการ์ดสรุปปฏิทิน
+    window.showCalSumDetail = function (type) {
+      const det = window._calDetail;
+      if (!det) return;
+      const items = det[type] || [];
+      const empName = det.empName || '';
+      const fmtDate = (dk) => {
+        if (!dk) return '-';
+        try {
+          const d = new Date(dk);
+          return d.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+        } catch (_) { return dk; }
+      };
+      const titles = {
+        work: { t: 'มาทำงาน', icon: 'fa-user-check', col: '#16a34a', bg: '#f0fdf4' },
+        late: { t: 'มาสาย', icon: 'fa-clock', col: '#f97316', bg: '#fff7ed' },
+        early: { t: 'ออกก่อนเวลา', icon: 'fa-sign-out-alt', col: '#7c3aed', bg: '#faf5ff' },
+        leave: { t: 'วันลา', icon: 'fa-umbrella-beach', col: '#9d174d', bg: '#fdf2f8' },
+        absent: { t: 'ขาดงาน', icon: 'fa-times-circle', col: '#dc2626', bg: '#fef2f2' },
+        ot: { t: 'วันที่มี OT', icon: 'fa-bolt', col: '#1d4ed8', bg: '#eff6ff' },
+      };
+      const h = titles[type] || titles.work;
+
+      let rowsHtml = '';
+      if (!items.length) {
+        rowsHtml = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i><div style="font-size:13px;">ไม่มีข้อมูล</div></div>`;
+      } else if (type === 'work') {
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#16a34a;font-weight:700;">▲${r.checkIn}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#475569;font-weight:700;">▼${r.checkOut}</td>
+            <td style="padding:10px 12px;font-size:11px;color:#6366f1;">${r.location || '-'}</td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">เข้า</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ออก</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">สถานที่</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      } else if (type === 'late') {
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#f97316;font-weight:700;">${r.checkIn}</td>
+            <td style="padding:10px 12px;font-size:11px;color:#64748b;">กะ ${r.workStart}</td>
+            <td style="padding:10px 12px;font-size:11px;"><span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:700;">สาย ${r.mins} นาที</span></td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">เข้า</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">กำหนด</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">สาย</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      } else if (type === 'early') {
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#7c3aed;font-weight:700;">${r.checkOut}</td>
+            <td style="padding:10px 12px;font-size:11px;color:#64748b;">กะ ${r.workEnd}</td>
+            <td style="padding:10px 12px;font-size:11px;"><span style="background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:10px;font-weight:700;">ก่อน ${r.mins} นาที</span></td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ออก</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">กำหนด</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ออกก่อน</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      } else if (type === 'leave') {
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:12px;"><span style="background:#fce7f3;color:#9d174d;padding:2px 10px;border-radius:12px;font-weight:700;">${r.type}</span></td>
+            <td style="padding:10px 12px;font-size:11px;color:#64748b;max-width:200px;word-wrap:break-word;">${r.reason || '-'}</td>
+            <td style="padding:10px 12px;font-size:11px;color:#dc2626;font-weight:700;text-align:right;">${r.deduct > 0 ? '-' + r.deduct : '0'}</td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ประเภท</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">เหตุผล</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">หัก</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      } else if (type === 'absent') {
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:12px;"><span style="background:#fecaca;color:#991b1b;padding:2px 10px;border-radius:12px;font-weight:700;">ไม่มาทำงาน</span></td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">สถานะ</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      } else if (type === 'ot') {
+        const tOT = items.reduce((s, r) => s + (r.hours || 0), 0);
+        const tPay = items.reduce((s, r) => s + (r.pay || 0), 0);
+        rowsHtml = items.map((r, i) => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+            <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#1d4ed8;font-weight:700;">${r.hours} ชม.</td>
+            <td style="padding:10px 12px;font-size:13px;color:#1d4ed8;font-weight:700;text-align:right;">฿${Number(r.pay).toLocaleString()}</td>
+          </tr>`).join('');
+        rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ชม.</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">ค่า OT</th></tr></thead><tbody>${rowsHtml}</tbody><tfoot><tr style="background:#eff6ff;"><td colspan="2" style="padding:10px 12px;font-weight:800;color:#1d4ed8;">รวม ${items.length} วัน</td><td style="padding:10px 12px;font-weight:800;color:#1d4ed8;">${tOT.toFixed(1)} ชม.</td><td style="padding:10px 12px;font-weight:800;color:#1d4ed8;text-align:right;">฿${tPay.toLocaleString()}</td></tr></tfoot></table>`;
+      }
+
+      const body = `
+    <div style="background:${h.bg};border-left:4px solid ${h.col};border-radius:12px;padding:12px 14px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:${h.col};display:flex;align-items:center;justify-content:center;">
+          <i class="fas ${h.icon}" style="color:#fff;font-size:16px;"></i>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.4px;">${empName}</div>
+          <div style="font-size:16px;font-weight:800;color:${h.col};">${h.t} · ${items.length} ${type === 'ot' ? 'วัน' : (type === 'late' || type === 'early' ? 'ครั้ง' : 'วัน')}</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;max-height:440px;overflow-y:auto;">
+      ${rowsHtml}
+    </div>`;
+      openModal(h.t + ' — ' + empName, body, '<button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ปิด</button>');
     };
 
     window.showCalDayDetail = function (dataStr) {
@@ -15786,6 +16022,7 @@ async function handle(req) {
       let headerBg = '#16a34a', title = 'มาทำงาน';
       if (d.type === 'leave') { headerBg = '#7c3aed'; title = d.leaveType || 'วันลา'; }
       if (d.type === 'weekend') { headerBg = '#dc2626'; title = d.holidayName || 'วันหยุด'; }
+      if (d.type === 'absent') { headerBg = '#dc2626'; title = 'ขาดงาน — ไม่มาทำงาน'; }
       if (d.type === 'empty') { headerBg = '#94a3b8'; title = 'ไม่มีข้อมูล'; }
       if (d.type === 'today') { headerBg = '#16a34a'; title = 'มาทำงาน'; }
 
