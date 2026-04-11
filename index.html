@@ -5734,6 +5734,13 @@
           style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;white-space:nowrap;">
           <i class="fas fa-file-upload mr-1"></i>Import ย้อนหลัง
         </button>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:transparent;margin-bottom:4px;">.</div>
+        <button onclick="openDeleteMonthAttendance()"
+          style="background:#dc2626;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;white-space:nowrap;">
+          <i class="fas fa-calendar-times mr-1"></i>ลบทั้งเดือน
+        </button>
       </div>` : ''}
     </div>
 
@@ -12833,10 +12840,222 @@
     };
 
     // =====================================================================
+    //  ลบบันทึกเข้างานทั้งเดือน (admin)
+    // =====================================================================
+    window.openDeleteMonthAttendance = function () {
+      const now = new Date();
+      const curY = now.getFullYear();
+      const curM = String(now.getMonth() + 1).padStart(2, '0');
+      const body = `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:12px;padding:12px 14px;color:#991b1b;font-size:13px;">
+        <i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>
+        <b>คำเตือน:</b> การลบข้อมูลนี้ไม่สามารถกู้คืนได้
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">ปี (ค.ศ.)</label>
+          <input id="delm-year" type="number" value="${curY}" min="2020" max="2030"
+            style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:14px;font-family:Sarabun,sans-serif;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px;">เดือน</label>
+          <select id="delm-month" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;">
+            ${['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
+              .map((n, i) => `<option value="${String(i + 1).padStart(2, '0')}" ${String(i + 1).padStart(2, '0') === curM ? 'selected' : ''}>${n}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;background:#f8fafc;border-radius:12px;padding:12px 14px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;cursor:pointer;">
+          <input type="checkbox" id="delm-chk-att" checked style="width:16px;height:16px;accent-color:#dc2626;">
+          <span>ลบบันทึกเข้างาน (attendance)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;cursor:pointer;">
+          <input type="checkbox" id="delm-chk-leave" style="width:16px;height:16px;accent-color:#dc2626;">
+          <span>ลบใบลาที่อนุมัติแล้วในเดือนนี้ (leaveRequests)</span>
+        </label>
+      </div>
+      <div id="delm-preview" style="display:none;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;padding:12px 14px;font-size:13px;color:#92400e;"></div>
+    </div>`;
+      const footer = `
+    <button onclick="previewDeleteMonth()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-search mr-1"></i>ตรวจสอบ</button>
+    <button id="delm-go-btn" onclick="doDeleteMonthAttendance()" style="display:none;" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-trash mr-1"></i>ลบทั้งเดือน</button>
+    <button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ยกเลิก</button>`;
+      openModal('ลบบันทึกเข้างานทั้งเดือน', body, footer);
+    };
+
+    window.previewDeleteMonth = async function () {
+      const y = document.getElementById('delm-year').value;
+      const m = document.getElementById('delm-month').value;
+      const delAtt = document.getElementById('delm-chk-att').checked;
+      const delLeave = document.getElementById('delm-chk-leave').checked;
+      if (!delAtt && !delLeave) return alert('กรุณาเลือกประเภทข้อมูลที่จะลบ');
+      const ym = y + '-' + m;
+      const prefix = ym + '-';
+
+      // นับจำนวนบันทึก attendance ในเดือนนั้น — ต้องดึงจาก Firebase ทั้งหมด
+      // เพราะ db.attendance เก็บเฉพาะวันที่เคยโหลดเท่านั้น
+      let attCount = 0, attDays = 0;
+      window._delmAttDatesCache = [];
+      if (delAtt) {
+        showSync();
+        try {
+          // ดึงจาก Firebase โดยตรง ใช้ shallow=true เพื่อเอาเฉพาะ key (ประหยัด bandwidth)
+          let allAttKeys = null;
+          try {
+            const url = `${FB}/attendance.json?shallow=true&auth=${FB_KEY}`;
+            const res = await fetch(url);
+            allAttKeys = await res.json();
+          } catch (_) { }
+
+          if (allAttKeys && typeof allAttKeys === 'object') {
+            // shallow=true คืนเฉพาะ key (ค่าเป็น true) — ต้องไปดึงรายละเอียดทีละวัน
+            const matchedDates = Object.keys(allAttKeys).filter(dk => dk.startsWith(prefix));
+            window._delmAttDatesCache = matchedDates;
+            attDays = matchedDates.length;
+            // นับจำนวน record จริงในแต่ละวัน
+            for (const dk of matchedDates) {
+              try {
+                const bucket = await fbGet(`/attendance/${dk}`);
+                if (bucket && typeof bucket === 'object') {
+                  attCount += Object.keys(bucket).length;
+                  // cache ไว้ใช้ตอนลบจริงด้วย
+                  db.attendance[dk] = bucket;
+                }
+              } catch (_) { }
+            }
+          } else {
+            // fallback: ใช้ loadAttendanceMonth
+            if (typeof loadAttendanceMonth === 'function') {
+              await loadAttendanceMonth(ym);
+            }
+            for (const dk of Object.keys(db.attendance || {})) {
+              if (dk.startsWith(prefix)) {
+                attDays++;
+                attCount += Object.keys(db.attendance[dk] || {}).length;
+                window._delmAttDatesCache.push(dk);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('preview delete month', e);
+        }
+        hideSync();
+      }
+
+      // นับใบลา — ต้องดึงจาก Firebase (db อาจไม่โหลด leaveRequests)
+      let leaveCount = 0;
+      if (delLeave) {
+        showSync();
+        try {
+          const allLeaves = await fbGet('/leaveRequests') || {};
+          for (const empKey of Object.keys(allLeaves)) {
+            const emps = allLeaves[empKey] || {};
+            for (const lk of Object.keys(emps)) {
+              const lv = emps[lk];
+              if (!lv) continue;
+              const sd = (lv.startDate || '').slice(0, 7);
+              const ed = (lv.endDate || lv.startDate || '').slice(0, 7);
+              if (sd === ym || ed === ym) leaveCount++;
+            }
+          }
+          window._delmLeavesCache = allLeaves;
+        } catch (_) { }
+        hideSync();
+      }
+
+      const prevEl = document.getElementById('delm-preview');
+      prevEl.style.display = '';
+      prevEl.innerHTML = `
+        <div style="font-weight:700;margin-bottom:6px;"><i class="fas fa-info-circle mr-1"></i>ข้อมูลที่จะลบในเดือน ${m}/${y}</div>
+        ${delAtt ? `<div>• บันทึกเข้างาน: <b>${attCount}</b> รายการ (${attDays} วัน)</div>` : ''}
+        ${delLeave ? `<div>• ใบลา: <b>${leaveCount}</b> รายการ</div>` : ''}
+        ${(delAtt && attCount === 0 && delLeave && leaveCount === 0) || (!delLeave && delAtt && attCount === 0) || (!delAtt && delLeave && leaveCount === 0) ? '<div style="color:#dc2626;margin-top:6px;"><b>ไม่พบข้อมูลในเดือนนี้</b></div>' : ''}`;
+      const hasData = (delAtt && attCount > 0) || (delLeave && leaveCount > 0);
+      document.getElementById('delm-go-btn').style.display = hasData ? '' : 'none';
+    };
+
+    window.doDeleteMonthAttendance = async function () {
+      const y = document.getElementById('delm-year').value;
+      const m = document.getElementById('delm-month').value;
+      const delAtt = document.getElementById('delm-chk-att').checked;
+      const delLeave = document.getElementById('delm-chk-leave').checked;
+      const ym = y + '-' + m;
+      const prefix = ym + '-';
+      const mName = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'][parseInt(m) - 1];
+
+      if (!confirm(`⚠️ ยืนยันการลบข้อมูลเดือน ${mName} ${y}?\n\n${delAtt ? '✓ บันทึกเข้างาน\n' : ''}${delLeave ? '✓ ใบลา\n' : ''}\nการดำเนินการนี้ไม่สามารถกู้คืนได้!`)) return;
+      const confirmText = prompt(`พิมพ์ "ลบ ${mName}" เพื่อยืนยัน`);
+      if (confirmText !== `ลบ ${mName}`) return alert('ยกเลิกการลบ');
+
+      showSync();
+      let attDel = 0, leaveDel = 0, fail = 0;
+
+      if (delAtt) {
+        // ใช้รายชื่อวันที่จาก cache (ถ้ายังไม่ได้ preview ให้ดึงใหม่)
+        let dateList = window._delmAttDatesCache || [];
+        if (!dateList.length) {
+          try {
+            const url = `${FB}/attendance.json?shallow=true&auth=${FB_KEY}`;
+            const res = await fetch(url);
+            const allAttKeys = await res.json();
+            if (allAttKeys && typeof allAttKeys === 'object') {
+              dateList = Object.keys(allAttKeys).filter(dk => dk.startsWith(prefix));
+            }
+          } catch (_) { }
+        }
+
+        for (const dk of dateList) {
+          try {
+            // นับก่อนลบ (จาก db.attendance ถ้ามี, ไม่งั้นดึงจาก fb)
+            let cnt = Object.keys(db.attendance[dk] || {}).length;
+            if (!cnt) {
+              const bucket = await fbGet(`/attendance/${dk}`);
+              cnt = bucket && typeof bucket === 'object' ? Object.keys(bucket).length : 0;
+            }
+            await fbDelete(`/attendance/${dk}`);
+            attDel += cnt;
+            delete db.attendance[dk];
+          } catch (_) { fail++; }
+        }
+      }
+
+      if (delLeave) {
+        try {
+          const allLeaves = window._delmLeavesCache || await fbGet('/leaveRequests') || {};
+          for (const empKey of Object.keys(allLeaves)) {
+            const emps = allLeaves[empKey] || {};
+            for (const lk of Object.keys(emps)) {
+              const lv = emps[lk];
+              if (!lv) continue;
+              const sd = (lv.startDate || '').slice(0, 7);
+              const ed = (lv.endDate || lv.startDate || '').slice(0, 7);
+              if (sd === ym || ed === ym) {
+                try {
+                  await fbDelete(`/leaveRequests/${empKey}/${lk}`);
+                  leaveDel++;
+                } catch (_) { fail++; }
+              }
+            }
+          }
+        } catch (_) { }
+      }
+
+      hideSync();
+      closeModal();
+      const dkNow = window._alogDk || todayStr;
+      _renderAttendanceLog(dkNow);
+      if (typeof renderDashBody === 'function') renderDashBody(dkNow);
+      alert(`✅ ลบเสร็จสิ้น\nบันทึกเข้างาน: ${attDel} รายการ\nใบลา: ${leaveDel} รายการ${fail ? '\nล้มเหลว: ' + fail : ''}`);
+    };
+
+    // =====================================================================
     //  IMPORT ATTENDANCE ย้อนหลังจาก Excel
-    //  รองรับ 2 ฟอร์ม:
+    //  รองรับ 3 ฟอร์ม:
     //  1) "รายชื่อพนักงานมาทำงาน" — แถว=พนักงาน, คอลัมน์=วันที่ 1-31
     //  2) "BYD Salary" — แถว=วันที่, คอลัมน์=พนักงาน
+    //  3) "สรุปขาด/ลา/ป่วย รายวัน" — Sheet รายละเอียดรายวัน
     // =====================================================================
     window.openImportHistExcel = function () {
       const body = `
@@ -12846,6 +13065,7 @@
         <select id="imp-format" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:Sarabun,sans-serif;outline:none;">
           <option value="format1">รายชื่อพนักงานมาทำงาน (แถว=พนักงาน คอลัมน์=วันที่)</option>
           <option value="format2">BYD Salary (แถว=วันที่ คอลัมน์=พนักงาน)</option>
+          <option value="format3">สรุปขาด/ลา/ป่วย รายวัน (Sheet รายละเอียดรายวัน)</option>
         </select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -12873,7 +13093,8 @@
       <div style="background:#eff6ff;border-radius:10px;padding:10px 12px;font-size:12px;color:#1e40af;">
         <i class="fas fa-info-circle" style="margin-right:4px;"></i>
         <b>ฟอร์ม 1:</b> ตัวเลข (8, 9.5) = มาทำงาน | "ป่วย" = ลาป่วย | "กิจ" = ลากิจ | "-" = วันหยุด<br>
-        <b>ฟอร์ม 2:</b> ตัวเลข (600, 500) = มาทำงาน | "ลป" = ลาป่วย | "ลก" = ลากิจ | "ขาด" = ขาดงาน
+        <b>ฟอร์ม 2:</b> ตัวเลข (600, 500) = มาทำงาน | "ลป" = ลาป่วย | "ลก" = ลากิจ | "ขาด" = ขาดงาน<br>
+        <b>ฟอร์ม 3:</b> อ่าน Sheet "รายละเอียดรายวัน" — นำเข้าเฉพาะเดือนที่เลือก (ป่วย/ลากิจ/ขาด/พักงาน)
       </div>
     </div>`;
       const footer = `
@@ -12972,6 +13193,61 @@
                 parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลากิจ' });
               } else if (!isNaN(parseFloat(val)) && parseFloat(val) > 0) {
                 parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'work', hours: parseFloat(val) });
+              }
+            }
+          }
+        } else if (format === 'format3') {
+          // ฟอร์ม 3: Sheet "รายละเอียดรายวัน" — คอลัมน์ A=ลำดับ B=ชื่อ G=วันที่(คั่นด้วย comma) H=ประเภท
+          // เลือกเฉพาะเดือนที่ user กำหนด
+          const THAI_MONTHS = { 'มกราคม': 1, 'กุมภาพันธ์': 2, 'มีนาคม': 3, 'เมษายน': 4, 'พฤษภาคม': 5, 'มิถุนายน': 6, 'กรกฎาคม': 7, 'สิงหาคม': 8, 'กันยายน': 9, 'ตุลาคม': 10, 'พฤศจิกายน': 11, 'ธันวาคม': 12 };
+          const targetMonth = parseInt(month);
+          // หา sheet — ลอง "รายละเอียดรายวัน" ก่อน, ถ้าไม่มีใช้อันแรกที่มีคำว่า "รายวัน"
+          let targetSheet = wb.SheetNames.find(s => s.includes('รายละเอียดรายวัน')) || wb.SheetNames.find(s => s.includes('รายวัน'));
+          if (!targetSheet) { alert('ไม่พบ Sheet "รายละเอียดรายวัน" ในไฟล์'); return; }
+          const data = XLSX.utils.sheet_to_json(wb.Sheets[targetSheet], { header: 1, defval: '' });
+
+          let currentEmp = null;
+          let currentName = '';
+          for (let r = 2; r < data.length; r++) {
+            const row = data[r];
+            const nameCell = (row[1] || '').toString().trim();
+            if (nameCell) {
+              currentName = nameCell;
+              currentEmp = _matchEmpByName(nameCell);
+              if (!currentEmp) unmatchedNames.add(nameCell);
+            }
+            if (!currentEmp) continue;
+
+            const datesCell = (row[6] || '').toString().trim();
+            const typeCell = (row[7] || '').toString().trim();
+            if (!datesCell || !typeCell) continue;
+
+            // parse type — e.g. "ป่วย (4 วัน)", "ลากิจ (19 วัน)", "ขาด (1 วัน)", "พักงาน (5 วัน)"
+            const typeM = typeCell.match(/^(ป่วย|ลาป่วย|ลากิจ|กิจ|ขาด|ขาดงาน|พักงาน)/);
+            if (!typeM) continue;
+            const tRaw = typeM[1];
+            let recType = null, leaveType = null;
+            if (tRaw === 'ป่วย' || tRaw === 'ลาป่วย') { recType = 'leave'; leaveType = 'ลาป่วย'; }
+            else if (tRaw === 'ลากิจ' || tRaw === 'กิจ') { recType = 'leave'; leaveType = 'ลากิจ'; }
+            else if (tRaw === 'ขาด' || tRaw === 'ขาดงาน') { recType = 'absent'; }
+            else if (tRaw === 'พักงาน') { recType = 'leave'; leaveType = 'พักงาน'; }
+
+            // parse dates — e.g. "2 มกราคม, 3 มกราคม, 6 มีนาคม"
+            const dateTokens = datesCell.split(',').map(s => s.trim()).filter(Boolean);
+            for (const tok of dateTokens) {
+              const m2 = tok.match(/^(\d{1,2})\s*([ก-๙]+)/);
+              if (!m2) continue;
+              const day = parseInt(m2[1]);
+              const mName = m2[2];
+              const mNum = THAI_MONTHS[mName];
+              if (!mNum || mNum !== targetMonth) continue;
+              if (day < 1 || day > 31) continue;
+              const dk = ym + '-' + String(day).padStart(2, '0');
+
+              if (recType === 'leave') {
+                parsed.push({ empKey: currentEmp._key, empName: currentEmp.name, dept: currentEmp.dept, date: dk, type: 'leave', leaveType });
+              } else if (recType === 'absent') {
+                parsed.push({ empKey: currentEmp._key, empName: currentEmp.name, dept: currentEmp.dept, date: dk, type: 'absent' });
               }
             }
           }
@@ -13084,19 +13360,22 @@
               checkInMethod: 'import', adminEditBy: CU.displayName,
               locationId: '', locationName: ''
             };
+            // เวลาทำงานปกติ 08:00-17:30 (9.5 ชม.รวมพัก = 8 ชม.ทำงานจริง)
+            // ถ้า r.hours > 8 ถือเป็น OT
             if (r.hours && r.hours > 8) {
               const otH = Math.round((r.hours - 8) * 10) / 10;
               rec.otHours = otH;
               rec.otPay = Math.round(otH * (db.wage.otRate || 75));
               rec.total = wage + rec.otPay;
+              // ออกงานปกติ 17:30 + OT
               rec.checkOutTime = (() => {
-                const mins = Math.round(r.hours * 60);
-                const h = 8 + Math.floor(mins / 60);
-                const m = mins % 60;
+                const totalMins = 17 * 60 + 30 + Math.round(otH * 60);
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
                 return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
               })();
             } else {
-              rec.checkOutTime = '17:00';
+              rec.checkOutTime = '17:30';
             }
             const res = await fbPush(`/attendance/${r.date}`, rec);
             if (!db.attendance[r.date]) db.attendance[r.date] = {};
