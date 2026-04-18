@@ -13380,12 +13380,21 @@
 
     window._impParsedData = []; // [{empKey, empName, date, type, hours, wage}]
 
-    window.parseImportExcel = function () {
+    window.parseImportExcel = async function () {
       const fileInput = document.getElementById('imp-file');
       const format = document.getElementById('imp-format').value;
       const year = document.getElementById('imp-year').value;
       const month = document.getElementById('imp-month').value;
       if (!fileInput.files.length) return alert('กรุณาเลือกไฟล์');
+
+      // โหลด weekly holiday จาก admin settings ก่อน parse (ไม่ hardcode เสาร์-อาทิตย์)
+      let weeklyHolSet = new Set([0]); // default: อาทิตย์เท่านั้น
+      try {
+        const holCfg = await fbGet('/settings/holidays');
+        if (holCfg?.weekly && Array.isArray(holCfg.weekly) && holCfg.weekly.length > 0) {
+          weeklyHolSet = new Set(holCfg.weekly.map(Number));
+        }
+      } catch (_) { }
 
       const reader = new FileReader();
       reader.onload = function (e) {
@@ -13424,7 +13433,7 @@
 
               const dk = ym + '-' + String(day).padStart(2, '0');
               const dow = new Date(parseInt(year), parseInt(month) - 1, day).getDay();
-              if (dow === 0 || dow === 6) continue; // ข้ามวันหยุด
+              if (weeklyHolSet.has(dow)) continue; // ข้ามเฉพาะวันหยุดที่แอดมินกำหนด
 
               if (sv === 'ป่วย' || sv === 'ลาป่วย') {
                 parsed.push({ empKey: emp._key, empName: emp.name, dept: emp.dept, date: dk, type: 'leave', leaveType: 'ลาป่วย' });
@@ -13518,7 +13527,7 @@
               if (!day || day < 1 || day > 31 || day > daysInMonth) continue;
               const dk = ym + '-' + String(day).padStart(2, '0');
               const dow = new Date(parseInt(year), parseInt(month) - 1, day).getDay();
-              if (dow === 0 || dow === 6) continue;
+              if (weeklyHolSet.has(dow)) continue; // ข้ามเฉพาะวันหยุดที่แอดมินกำหนด
 
               for (const { col, emp } of empCols) {
                 const val = row[col];
