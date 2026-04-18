@@ -1245,10 +1245,18 @@
     const FB = 'https://forsale-cce00-default-rtdb.asia-southeast1.firebasedatabase.app';
     const FB_KEY = 'AIzaSyBsmnP0TnZiVNB2TDPhWLL7qnZFrDddIxU';
 
-    async function fbGet(path) {
-      const r = await fetch(`${FB}${path}.json?auth=${FB_KEY}`);
-      if (!r.ok) throw new Error(`GET ${path} → HTTP ${r.status}`);
-      return r.json(); // null หรือ object
+    async function fbGet(path, timeoutMs = 15000) {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const r = await fetch(`${FB}${path}.json?auth=${FB_KEY}`, { signal: controller.signal });
+        clearTimeout(tid);
+        if (!r.ok) throw new Error(`GET ${path} → HTTP ${r.status}`);
+        return r.json(); // null หรือ object
+      } catch (e) {
+        clearTimeout(tid);
+        throw e;
+      }
     }
 
     async function fbSet(path, data) {
@@ -1547,6 +1555,7 @@
           return;
         }
 
+        showLoader('📋 โหลดข้อมูลพนักงาน...');
         const [supervisors, employees, departments, wage, admin] = await Promise.all([
           fbGet('/supervisors'),
           fbGet('/employees'),
@@ -1578,6 +1587,7 @@
           });
         }
 
+        showLoader('⚙️ โหลดการตั้งค่า...');
         // Load check-in mode
         const ciMode = await fbGet('/settings/checkinMode');
         if (ciMode) checkinMode = ciMode;
@@ -1614,6 +1624,7 @@
           await seedInitialData();
         }
 
+        showLoader('🔗 เชื่อมต่อ LINE...');
         await initLiff();
 
         if (!CU) {
@@ -1947,8 +1958,17 @@
     const FACE_REG_MAX = 3;         // max self-registrations per employee
 
     async function initLiff() {
+      // ถ้า LIFF_ID ยังเป็น placeholder หรือว่าง → ข้ามทันที ไม่ block loader
+      if (!LIFF_ID || LIFF_ID === 'YOUR_LIFF_ID_HERE' || LIFF_ID.trim() === '') {
+        console.log('LIFF_ID not configured — skipping LIFF init');
+        return;
+      }
       try {
-        await liff.init({ liffId: LIFF_ID });
+        // ใส่ timeout 8 วินาที ป้องกัน liff.init() hang
+        await Promise.race([
+          liff.init({ liffId: LIFF_ID }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('LIFF init timeout')), 8000))
+        ]);
         if (liff.isLoggedIn()) {
           showLoader('ตรวจสอบข้อมูล LINE...');
           const profile = await liff.getProfile();
@@ -6348,49 +6368,119 @@
       const statsEl = document.getElementById('re-sum-stats');
       if (tableEl) tableEl.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:20px;"></i><div style="margin-top:8px;font-size:13px;">กำลังคำนวณ...</div></div>';
 
-      await loadAttendanceMonth(month);
+      // ★ โหลด attendance ทั้งปี (เพื่อคำนวณคะแนนรายปี)
+      const [yearStr] = month.split('-');
+      const yearPrefix = yearStr;
+      const monthsOfYear = [];
+      for (let m = 1; m <= 12; m++) monthsOfYear.push(`${yearPrefix}-${String(m).padStart(2, '0')}`);
+      await Promise.all(monthsOfYear.map(mo => loadAttendanceMonth(mo).catch(() => { })));
 
       // Load leave requests
       let allLeaves = {};
       try { allLeaves = (await fbGet('/leaveRequests')) || {}; } catch (_) { }
 
-      const [yearStr, monStr] = month.split('-');
+      // Load leave types (map ชื่อ → deduct/วัน สำหรับ fallback)
+      let absentDeductPerDay = 0;
+      const leaveTypeMapSum = {};
+      try {
+        const lt = await fbGet('/settings/leaveTypes');
+        if (lt && typeof lt === 'object') {
+          Object.values(lt).forEach(t => {
+            if (t && t.name) {
+              const dv = Number(t.deduct) || 0;
+              leaveTypeMapSum[t.name] = dv;
+              if (t.name === 'ขาดงาน') absentDeductPerDay = dv;
+            }
+          });
+        }
+      } catch (_) { }
+
+      // Load holidays (weekly + special) — เพื่อไม่ให้ขึ้นขาดในวันหยุดพิเศษ เช่น สงกรานต์
+      const holRawSum = await fbGet('/settings/holidays').catch(() => null);
+      const weeklyHolSetSum = new Set((holRawSum?.weekly || []).map(Number));
+      const specialHolSetSum = new Set();
+      Object.values(holRawSum?.special || {}).forEach(h => { if (h?.date) specialHolSetSum.add(h.date); });
+
+      const [, monStr] = month.split('-');
       const daysInMonth = new Date(parseInt(yearStr), parseInt(monStr), 0).getDate();
 
-      // Count working days (exclude weekends)
+      // Count working days (exclude weekly holidays + special holidays)
       let totalWorkDays = 0;
       for (let d = 1; d <= daysInMonth; d++) {
         const dt = new Date(parseInt(yearStr), parseInt(monStr) - 1, d);
         const dow = dt.getDay();
-        if (dow !== 0 && dow !== 6) totalWorkDays++;
+        const dkTmp = month + '-' + String(d).padStart(2, '0');
+        if (weeklyHolSetSum.has(dow)) continue;
+        if (specialHolSetSum.has(dkTmp)) continue;
+        totalWorkDays++;
       }
+
+      // คำนวณ leave-cover-set + deduct ต่อใบ (ทั้งปี) สำหรับแต่ละคน
+      const computeLeaveDeduct = (lv) => {
+        const lvDays = Number(lv.days) || 1;
+        const typeName = lv.type || lv.leaveType || '';
+        // ลำดับ: 1) ค่าปัจจุบันจาก admin settings  2) deductPerDay ที่บันทึกไว้  3) totalDeduct ที่บันทึกไว้
+        if (typeName && leaveTypeMapSum[typeName] !== undefined) {
+          return leaveTypeMapSum[typeName] * lvDays;
+        }
+        const dpd = Number(lv.deductPerDay) || 0;
+        if (dpd > 0) return dpd * lvDays;
+        return Number(lv.totalDeduct) || 0;
+      };
+
+      // ตรวจว่าเดือนที่เลือกเป็นอนาคตหรือไม่
+      const selectedYM = new Date(parseInt(yearStr), parseInt(monStr) - 1, 1);
+      const todayYM   = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      const isSelectedFuture = selectedYM > todayYM;
 
       const results = [];
       for (const emp of db.employees) {
+        const empLeaves = allLeaves[emp._key];
+
+        // Build leave-date-set ครอบคลุมทั้งเดือน (รวมใบลาที่ข้ามเดือน)
+        const monthLeaveDateSet = new Set();
+        const detailLeave = [];
+        let leaveDays = 0;
+        if (empLeaves && typeof empLeaves === 'object') {
+          Object.values(empLeaves).forEach(lv => {
+            if (!lv || lv.status === 'rejected') return;
+            const sd = lv.startDate || '', ed = lv.endDate || sd;
+            if (!sd) return;
+            // ใบลาต้องครอบคลุมวันใดวันหนึ่งในเดือนนี้
+            const lvStart = sd.slice(0, 7), lvEnd = ed.slice(0, 7);
+            if (lvEnd < month || lvStart > month) return;
+            const lvType = lv.leaveType || lv.type || '';
+            const lvDays = Number(lv.days) || 1;
+            const lvDeduct = computeLeaveDeduct(lv);
+            leaveDays += lvDays;
+            detailLeave.push({ date: sd, endDate: ed, type: lvType || '-', days: lvDays, reason: lv.reason || '-', deduct: lvDeduct });
+            // เก็บวันที่ในเดือนนี้ที่ถูกครอบคลุมโดยใบลา
+            const s = new Date(sd), en = new Date(ed);
+            for (let cur = new Date(s); cur <= en; cur.setDate(cur.getDate() + 1)) {
+              const dkCur = cur.toISOString().slice(0, 10);
+              if (dkCur.startsWith(month)) monthLeaveDateSet.add(dkCur);
+            }
+          });
+        }
+
+        // ============ A) Stats รายเดือน (สำหรับแสดงผล) ============
         let workDays = 0, lateDays = 0, earlyDays = 0, totalHrs = 0, otHrs = 0;
         const detailWork = [], detailLate = [], detailEarly = [], detailAbsent = [], detailOT = [];
         for (let d = 1; d <= daysInMonth; d++) {
           const dk = month + '-' + String(d).padStart(2, '0');
           const dt = new Date(parseInt(yearStr), parseInt(monStr) - 1, d);
           const dow = dt.getDay();
-          const isWeekend = dow === 0 || dow === 6;
+          const isHoliday = weeklyHolSetSum.has(dow) || specialHolSetSum.has(dk);
           const bucket = db.attendance[dk];
           const rec = bucket ? Object.values(bucket).find(r => r.empId === emp._key) : null;
           if (rec && rec.checkInTime) {
             workDays++;
             detailWork.push({ date: dk, checkIn: rec.checkInTime, checkOut: rec.checkOutTime || '-', location: rec.locationName || '-' });
             const lateInfo = checkLate(emp, rec.checkInTime, rec.locationId);
-            if (lateInfo.late) {
-              lateDays++;
-              detailLate.push({ date: dk, checkIn: rec.checkInTime, workStart: lateInfo.workStart || '-', mins: lateInfo.minutesLate || 0, location: rec.locationName || '-' });
-            }
-            // ตรวจออกก่อนเวลา (ให้ตรงกับหน้าพนักงาน)
+            if (lateInfo.late) { lateDays++; detailLate.push({ date: dk, checkIn: rec.checkInTime, workStart: lateInfo.workStart || '-', mins: lateInfo.minutesLate || 0, location: rec.locationName || '-' }); }
             if (rec.checkOutTime) {
               const earlyInfo = checkEarlyOut(emp, rec.checkOutTime, rec.locationId);
-              if (earlyInfo.early) {
-                earlyDays++;
-                detailEarly.push({ date: dk, checkOut: rec.checkOutTime, workEnd: earlyInfo.workEnd || '-', mins: earlyInfo.minutesEarly || 0 });
-              }
+              if (earlyInfo.early) { earlyDays++; detailEarly.push({ date: dk, checkOut: rec.checkOutTime, workEnd: earlyInfo.workEnd || '-', mins: earlyInfo.minutesEarly || 0 }); }
             }
             if (rec.checkInTime && rec.checkOutTime) {
               const [ih, im] = rec.checkInTime.split(':').map(Number);
@@ -6401,50 +6491,98 @@
             const recOT = rec.otHours || 0;
             otHrs += recOT;
             if (recOT > 0) detailOT.push({ date: dk, hours: recOT });
-          } else if (!isWeekend && dk < todayStr) {
-            // ★ นับขาดเฉพาะวันที่ผ่านมาแล้ว (ไม่นับวันนี้และอนาคต)
+          } else if (!isHoliday && !isSelectedFuture && dk < todayStr && !monthLeaveDateSet.has(dk)) {
+            // ★ ขาดเฉพาะ: ไม่ใช่วันหยุด + ไม่ใช่เดือนอนาคต + ผ่านมาแล้ว + ไม่มีใบลาครอบคลุม
             detailAbsent.push({ date: dk });
           }
         }
 
-        // Leave count (approved only, this month) + totalDeduct สำหรับคะแนน
-        let leaveDays = 0;
-        let leaveDeduct = 0;
-        const detailLeave = [];
-        const empLeaves = allLeaves[emp._key];
-        if (empLeaves && typeof empLeaves === 'object') {
-          Object.values(empLeaves).forEach(lv => {
-            // ตรงกับหน้าพนักงาน — นับคำขอที่ไม่ถูก reject
-            if (lv.status === 'rejected') return;
-            if (!lv.startDate || !lv.startDate.startsWith(month)) return;
-            leaveDays += (lv.days || 1);
-            leaveDeduct += (Number(lv.totalDeduct) || 0);
-            detailLeave.push({ date: lv.startDate, endDate: lv.endDate || lv.startDate, type: lv.leaveType || lv.type || '-', days: lv.days || 1, reason: lv.reason || '-', deduct: lv.totalDeduct || 0 });
-          });
-        }
-
-        // ลบวันลาออกจาก detailAbsent
-        const leaveDateSet = new Set();
-        detailLeave.forEach(lv => {
-          const sd = new Date(lv.date), ed = new Date(lv.endDate || lv.date);
-          for (let cur = new Date(sd); cur <= ed; cur.setDate(cur.getDate() + 1)) {
-            leaveDateSet.add(cur.toISOString().slice(0, 10));
-          }
-        });
-        const filteredAbsent = detailAbsent.filter(a => !leaveDateSet.has(a.date));
+        const filteredAbsent = detailAbsent; // ถูก filter แล้วตั้งแต่ต้น
         const absentDays = filteredAbsent.length;
 
-        // ★ คะแนน: ใช้สูตรเดียวกับหน้าพนักงาน
-        //   = 100 − (leave totalDeduct) − (late×2) − (early×2)
-        const lateDeduct = lateDays * 2;
-        const earlyDeduct = earlyDays * 2;
-        const totalDeduct = leaveDeduct + lateDeduct + earlyDeduct;
+        // ============ B) คะแนน: คิดทั้งปี (1 ม.ค. - 31 ธ.ค.) ============
+        // B1) late/early ทั้งปี (จาก attendance)
+        let yrLateCount = 0, yrEarlyCount = 0;
+        Object.entries(db.attendance).forEach(([dk, bucket]) => {
+          if (!dk.startsWith(yearPrefix)) return;
+          const rec = Object.values(bucket || {}).find(r => r.empId === emp._key);
+          if (!rec || !rec.checkInTime) return;
+          const li = checkLate(emp, rec.checkInTime, rec.locationId);
+          if (li.late) yrLateCount++;
+          if (rec.checkOutTime) {
+            const ei = checkEarlyOut(emp, rec.checkOutTime, rec.locationId);
+            if (ei.early) yrEarlyCount++;
+          }
+        });
+
+        // B2) ใบลาทั้งปี + dedupe (ใช้ใบเดิมก่อน import)
+        const yrLeaves = [];
+        if (empLeaves && typeof empLeaves === 'object') {
+          Object.entries(empLeaves).forEach(([lvKey, lv]) => {
+            if (!lv || lv.status === 'rejected') return;
+            if (!String(lv.startDate || '').startsWith(yearPrefix)) return;
+            const _lv = { ...lv, _key: lvKey, _deduct: computeLeaveDeduct(lv) };
+            yrLeaves.push(_lv);
+          });
+        }
+        const perDayRate = (lv) => (lv._deduct || 0) / (Number(lv.days) || 1);
+        const yrDayLeaveMap = {};
+        yrLeaves.forEach(lv => {
+          const sd = lv.startDate, ed = lv.endDate || sd;
+          const s = new Date(sd), en = new Date(ed);
+          for (let d = new Date(s); d <= en; d.setDate(d.getDate() + 1)) {
+            const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            if (!dk.startsWith(yearPrefix)) continue;
+            const cur = yrDayLeaveMap[dk];
+            if (!cur) { yrDayLeaveMap[dk] = lv; continue; }
+            const curImp = (cur.reason === 'นำเข้าจาก Excel');
+            const nImp = (lv.reason === 'นำเข้าจาก Excel');
+            if (curImp && !nImp) yrDayLeaveMap[dk] = lv;
+            else if (curImp === nImp && perDayRate(lv) > perDayRate(cur)) yrDayLeaveMap[dk] = lv;
+          }
+        });
+        const yrLeaveCoverSet = new Set(Object.keys(yrDayLeaveMap));
+        let yrLeaveDeduct = 0;
+        Object.values(yrDayLeaveMap).forEach(lv => { yrLeaveDeduct += perDayRate(lv); });
+        yrLeaveDeduct = Math.round(yrLeaveDeduct);
+
+        // B3) ขาดงานทั้งปี (วันทำงานที่ผ่านมาแล้ว ไม่มี attendance และไม่มีใบลา)
+        const yrAttendedSet = new Set();
+        Object.entries(db.attendance).forEach(([dk, bucket]) => {
+          if (!dk.startsWith(yearPrefix)) return;
+          const rec = Object.values(bucket || {}).find(r => r.empId === emp._key);
+          if (rec) yrAttendedSet.add(dk);
+        });
+        const yearStart = new Date(`${yearPrefix}-01-01`);
+        const today = new Date(todayStr);
+        let yrAbsentCount = 0;
+        for (let d = new Date(yearStart); d < today; d.setDate(d.getDate() + 1)) {
+          const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          if (!dk.startsWith(yearPrefix)) continue;
+          if (weeklyHolSetSum.has(d.getDay())) continue;
+          if (specialHolSetSum.has(dk)) continue;
+          if (yrAttendedSet.has(dk)) continue;
+          if (yrLeaveCoverSet.has(dk)) continue;
+          yrAbsentCount++;
+        }
+
+        // B4) รวมคะแนน (ทั้งปี) — ใช้ค่าที่แอดมินตั้ง ไม่ hardcode
+        const lateDeductPerDay = Number(leaveTypeMapSum['มาสาย']) || 0;
+        const earlyDeductPerDay = Number(leaveTypeMapSum['ออกก่อนเวลา']) || 0;
+        const lateDeduct = yrLateCount * lateDeductPerDay;
+        const earlyDeduct = yrEarlyCount * earlyDeductPerDay;
+        const leaveDeduct = yrLeaveDeduct;
+        const absentDeduct = yrAbsentCount * absentDeductPerDay;
+        const totalDeduct = leaveDeduct + absentDeduct + lateDeduct + earlyDeduct;
         const score = Math.max(0, 100 - totalDeduct);
 
         results.push({
           emp, name: emp.name, dept: emp.dept || '-', empKey: emp._key,
           workDays, lateDays, earlyDays, leaveDays, absentDays,
-          leaveDeduct, lateDeduct, earlyDeduct, totalDeduct,
+          // คะแนนรายปี
+          yrLateCount, yrEarlyCount, yrAbsentCount,
+          yrLeaveCount: Object.values(yrDayLeaveMap).filter((v, i, a) => a.indexOf(v) === i).length,
+          leaveDeduct, absentDeduct, lateDeduct, earlyDeduct, totalDeduct,
           totalHrs: Math.round(totalHrs * 10) / 10,
           otHrs: Math.round(otHrs * 10) / 10,
           score,
@@ -6467,8 +6605,9 @@
             <div style="font-size:24px;font-weight:800;margin-top:4px;">${results.length} คน</div>
           </div>
           <div style="background:linear-gradient(135deg,#16a34a,#15803d);border-radius:14px;padding:16px;color:#fff;">
-            <div style="font-size:11px;opacity:.8;"><i class="fas fa-star" style="margin-right:4px;"></i>คะแนนเฉลี่ย</div>
+            <div style="font-size:11px;opacity:.8;"><i class="fas fa-star" style="margin-right:4px;"></i>คะแนนเฉลี่ย (ปี ${yearPrefix})</div>
             <div style="font-size:24px;font-weight:800;margin-top:4px;">${avgScore}/100</div>
+            <div style="font-size:10px;opacity:.7;margin-top:2px;">รีเซต 1 ม.ค. ของทุกปี</div>
           </div>
           <div style="background:linear-gradient(135deg,#d97706,#b45309);border-radius:14px;padding:16px;color:#fff;">
             <div style="font-size:11px;opacity:.8;"><i class="fas fa-clock" style="margin-right:4px;"></i>มาสายรวม</div>
@@ -6526,7 +6665,7 @@
               <th style="padding:12px 8px;text-align:center;font-size:12px;">มาสาย</th>
               <th style="padding:12px 8px;text-align:center;font-size:12px;">ชม.ทำงาน</th>
               <th style="padding:12px 8px;text-align:center;font-size:12px;">OT</th>
-              <th style="padding:12px 10px;text-align:center;font-size:12px;width:90px;">คะแนน</th>
+              <th style="padding:12px 10px;text-align:center;font-size:12px;width:90px;">คะแนน<div style="font-size:9px;opacity:.7;font-weight:500;">(ทั้งปี)</div></th>
               <th style="padding:12px 8px;text-align:center;font-size:12px;width:50px;">เกรด</th>
             </tr>
           </thead>
@@ -13189,6 +13328,13 @@
         <b>ฟอร์ม 2:</b> ตัวเลข (600, 500) = มาทำงาน | "ลป" = ลาป่วย | "ลก" = ลากิจ | "ขาด" = ขาดงาน<br>
         <b>ฟอร์ม 3:</b> อ่าน Sheet "รายละเอียดรายวัน" — นำเข้าเฉพาะเดือนที่เลือก (ป่วย/ลากิจ/ขาด/พักงาน)
       </div>
+      <div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:10px;padding:12px 14px;font-size:12px;color:#92400e;">
+        <div style="font-weight:700;margin-bottom:6px;"><i class="fas fa-wrench" style="margin-right:4px;"></i>เครื่องมือซ่อมข้อมูล</div>
+        <div style="margin-bottom:8px;">อัปเดตคะแนนหักของใบลาเก่า (ที่ <code>totalDeduct = 0</code>) ให้ตรงกับค่าที่ตั้งใน "ตั้งค่าประเภทการลา" — โดยไม่ต้องนำเข้าไฟล์ใหม่</div>
+        <button onclick="backfillLeaveDeducts()" style="background:#f59e0b;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;margin-right:6px;"><i class="fas fa-sync mr-1"></i>อัปเดตคะแนนหักใบลาเก่า</button>
+        <button onclick="cleanupDuplicateLeaves()" style="background:#dc2626;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif;"><i class="fas fa-broom mr-1"></i>ลบใบลานำเข้าที่ซ้ำ</button>
+        <div style="font-size:11px;color:#78350f;margin-top:6px;">ลบเฉพาะใบ "นำเข้าจาก Excel" ที่ซ้อนวันเดียวกันกับใบลาเดิมในระบบ</div>
+      </div>
     </div>`;
       const footer = `
     <button onclick="parseImportExcel()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold"><i class="fas fa-search mr-1"></i>ดูตัวอย่าง</button>
@@ -13438,6 +13584,17 @@
       showSync();
       let addedWork = 0, addedLeave = 0, skipped = 0, fail = 0;
 
+      // โหลดค่าหักคะแนนของแต่ละประเภทการลา
+      const leaveTypeDeductMap = {};
+      try {
+        const lt = await fbGet('/settings/leaveTypes');
+        if (lt && typeof lt === 'object') {
+          Object.values(lt).forEach(t => {
+            if (t && t.name) leaveTypeDeductMap[t.name] = Number(t.deduct) || 0;
+          });
+        }
+      } catch (_) { }
+
       for (const r of parsed) {
         try {
           if (r.type === 'work') {
@@ -13477,11 +13634,19 @@
           } else if (r.type === 'leave') {
             // สร้าง leave request (approved)
             const existLeaves = await fbGet(`/leaveRequests/${r.empKey}`);
-            const alreadyExists = existLeaves ? Object.values(existLeaves).some(lv => lv.startDate === r.date && lv.type === r.leaveType) : false;
+            // ★ ถ้ามีใบลาในวันนั้นอยู่แล้ว (ไม่ว่าประเภทใด และไม่ถูก reject) → ข้าม
+            //   เพื่อไม่ให้ซ้อน และใช้ใบลาเดิมในระบบเป็นหลัก (เช่น "ลาป่วยมีใบรับรองแพทย์")
+            const alreadyExists = existLeaves ? Object.values(existLeaves).some(lv => {
+              if (!lv || lv.status === 'rejected') return false;
+              const sd = lv.startDate || '';
+              const ed = lv.endDate || sd;
+              return sd <= r.date && r.date <= ed;
+            }) : false;
             if (alreadyExists) { skipped++; continue; }
+            const dpd = Number(leaveTypeDeductMap[r.leaveType]) || 0;
             await fbPush(`/leaveRequests/${r.empKey}`, {
               empId: r.empKey, empName: r.empName, dept: r.dept || '',
-              type: r.leaveType, deductPerDay: 0, startDate: r.date, endDate: r.date, days: 1, totalDeduct: 0,
+              type: r.leaveType, deductPerDay: dpd, startDate: r.date, endDate: r.date, days: 1, totalDeduct: dpd,
               reason: 'นำเข้าจาก Excel', status: 'approved',
               submittedAt: new Date().toISOString(), approvedAt: new Date().toISOString(), approvedBy: 'Import'
             });
@@ -13497,6 +13662,117 @@
       const dk = window._alogDk || todayStr;
       if (typeof _renderAttendanceLog === 'function') _renderAttendanceLog(dk);
       alert(`✅ นำเข้าข้อมูลสำเร็จ!\n• มาทำงาน: +${addedWork} วัน\n• ลา: +${addedLeave} วัน\n• ข้ามซ้ำ: ${skipped} รายการ${fail ? '\n• ผิดพลาด: ' + fail : ''}`);
+    };
+
+    // ========================================================================
+    // Backfill: อัปเดต totalDeduct/deductPerDay ของใบลาเก่าที่เป็น 0
+    // ========================================================================
+    window.backfillLeaveDeducts = async function () {
+      if (!confirm('จะสแกนใบลาทั้งหมดในระบบ แล้วอัปเดตค่าหักคะแนนให้ตรงกับ "ตั้งค่าประเภทการลา"\n\nเฉพาะใบลาที่ totalDeduct = 0 เท่านั้นที่จะถูกอัปเดต\nใบลาที่มี totalDeduct > 0 อยู่แล้ว จะไม่ถูกแตะต้อง\n\nดำเนินการต่อ?')) return;
+      showSync();
+      try {
+        // 1) โหลด leaveTypes map
+        const lt = await fbGet('/settings/leaveTypes');
+        const typeMap = {};
+        if (lt && typeof lt === 'object') {
+          Object.values(lt).forEach(t => {
+            if (t && t.name) typeMap[t.name] = Number(t.deduct) || 0;
+          });
+        }
+        if (!Object.keys(typeMap).length) {
+          hideSync();
+          return alert('❌ ยังไม่มีการตั้งค่าประเภทการลา กรุณาไปตั้งค่าก่อน');
+        }
+
+        // 2) โหลดใบลาทั้งหมด
+        const allLeaves = await fbGet('/leaveRequests');
+        if (!allLeaves || typeof allLeaves !== 'object') {
+          hideSync();
+          return alert('ไม่พบข้อมูลใบลา');
+        }
+
+        let scanned = 0, updated = 0, skipped = 0, noType = 0;
+        const details = [];
+        for (const [empKey, leaves] of Object.entries(allLeaves)) {
+          if (!leaves || typeof leaves !== 'object') continue;
+          for (const [lvKey, lv] of Object.entries(leaves)) {
+            if (!lv || typeof lv !== 'object') continue;
+            scanned++;
+            const td = Number(lv.totalDeduct) || 0;
+            if (td > 0) { skipped++; continue; }
+            const typeName = lv.type || lv.leaveType || '';
+            const perDay = Number(typeMap[typeName]) || 0;
+            if (perDay <= 0) { noType++; continue; }
+            const days = Number(lv.days) || 1;
+            const newTotal = perDay * days;
+            await fbPatch(`/leaveRequests/${empKey}/${lvKey}`, {
+              deductPerDay: perDay,
+              totalDeduct: newTotal,
+            });
+            updated++;
+            details.push(`${lv.empName || empKey}: ${typeName} ${days}d → -${newTotal}`);
+          }
+        }
+        hideSync();
+        alert(`✅ สแกนเสร็จแล้ว\n\n• สแกนทั้งหมด: ${scanned} ใบ\n• อัปเดต: ${updated} ใบ\n• ข้าม (มีคะแนนอยู่แล้ว): ${skipped} ใบ\n• ไม่รู้จักประเภท: ${noType} ใบ\n\n${details.slice(0, 10).join('\n')}${details.length > 10 ? '\n... และอีก ' + (details.length - 10) + ' รายการ' : ''}`);
+      } catch (err) {
+        hideSync();
+        alert('❌ เกิดข้อผิดพลาด: ' + (err?.message || err));
+      }
+    };
+
+    // ========================================================================
+    // Cleanup: ลบใบลา "นำเข้าจาก Excel" ที่ซ้อนวันเดียวกันกับใบลาเดิมในระบบ
+    // ========================================================================
+    window.cleanupDuplicateLeaves = async function () {
+      if (!confirm('จะสแกนใบลาทั้งหมด แล้ว **ลบ** ใบลา "นำเข้าจาก Excel" ที่ซ้อนวันเดียวกันกับใบลาเดิมในระบบ (หรือใบลา import ซ้ำกันเอง)\n\nเก็บใบลาเดิม (ที่ไม่ใช่ import) เป็นหลัก\n\nดำเนินการต่อ?')) return;
+      showSync();
+      try {
+        const allLeaves = await fbGet('/leaveRequests');
+        if (!allLeaves || typeof allLeaves !== 'object') {
+          hideSync();
+          return alert('ไม่พบข้อมูลใบลา');
+        }
+
+        let deleted = 0, scanned = 0;
+        const details = [];
+        for (const [empKey, leaves] of Object.entries(allLeaves)) {
+          if (!leaves || typeof leaves !== 'object') continue;
+          // Build per-date map with winner (prefer non-import)
+          const dayMap = {}; // dk → { key, lv, isImport }
+          const allEntries = Object.entries(leaves).filter(([, lv]) => lv && lv.status !== 'rejected');
+
+          // หาใบที่จะ "เก็บ" ในแต่ละวัน
+          for (const [lvKey, lv] of allEntries) {
+            const sd = lv.startDate, ed = lv.endDate || sd;
+            if (!sd) continue;
+            const isImport = (lv.reason === 'นำเข้าจาก Excel');
+            const s = new Date(sd), en = new Date(ed);
+            for (let d = new Date(s); d <= en; d.setDate(d.getDate() + 1)) {
+              const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              const cur = dayMap[dk];
+              if (!cur) { dayMap[dk] = { key: lvKey, lv, isImport }; continue; }
+              if (cur.isImport && !isImport) dayMap[dk] = { key: lvKey, lv, isImport };
+            }
+          }
+
+          // ลบใบที่เป็น import และวันของมันโดน override ด้วยใบเดิม
+          const keepKeys = new Set(Object.values(dayMap).map(x => x.key));
+          for (const [lvKey, lv] of allEntries) {
+            scanned++;
+            if (lv.reason !== 'นำเข้าจาก Excel') continue; // ลบเฉพาะใบ import
+            if (keepKeys.has(lvKey)) continue; // ใบนี้ยังเป็น winner อยู่ ไม่ลบ
+            await fbDelete(`/leaveRequests/${empKey}/${lvKey}`);
+            deleted++;
+            details.push(`${lv.empName || empKey}: ${lv.type} ${lv.startDate}`);
+          }
+        }
+        hideSync();
+        alert(`✅ ทำความสะอาดเสร็จ\n\n• สแกนทั้งหมด: ${scanned} ใบ\n• ลบใบ import ที่ซ้ำ: ${deleted} ใบ\n\n${details.slice(0, 10).join('\n')}${details.length > 10 ? '\n... และอีก ' + (details.length - 10) + ' รายการ' : ''}`);
+      } catch (err) {
+        hideSync();
+        alert('❌ เกิดข้อผิดพลาด: ' + (err?.message || err));
+      }
     };
 
     // Admin เช็คชื่อให้พนักงานจากหน้า Dashboard (กรณีลืมสแกน)
@@ -15635,6 +15911,17 @@ async function handle(req) {
       const specialHolMap = {};
       Object.values(holRaw?.special || {}).forEach(h => { if (h?.date) specialHolMap[h.date] = h.name || 'วันหยุดพิเศษ'; });
 
+      // Load leave type deduct settings (มาสาย / ออกก่อนเวลา)
+      const calLeaveTypeMap = {};
+      try {
+        const _lt = await fbGet('/settings/leaveTypes');
+        if (_lt && typeof _lt === 'object') {
+          Object.values(_lt).forEach(t => { if (t && t.name) calLeaveTypeMap[t.name] = Number(t.deduct) || 0; });
+        }
+      } catch (_) { }
+      const calLateDeductPer = calLeaveTypeMap['มาสาย'] || 0;
+      const calEarlyDeductPer = calLeaveTypeMap['ออกก่อนเวลา'] || 0;
+
       const timeToMin = t => { if (!t) return null; const [h, m] = (t + ':00').split(':').map(Number); return h * 60 + m; };
       const siMin = timeToMin(shiftIn), soMin = timeToMin(shiftOut);
 
@@ -15652,7 +15939,12 @@ async function handle(req) {
       const daysInMonth = new Date(yr, mo, 0).getDate();
       const todayDate = new Date();
       const isThisMonth = todayDate.getFullYear() === yr && todayDate.getMonth() + 1 === mo;
+      const isFutureMonth = yr > todayDate.getFullYear() || (yr === todayDate.getFullYear() && mo > todayDate.getMonth() + 1);
       const todayD = isThisMonth ? todayDate.getDate() : -1;
+      // cutoffD     : สำหรับ work/leave — รวมวันนี้ / อนาคต=0
+      // absentCutoffD : สำหรับ absent — ไม่รวมวันนี้, ไม่รวมอนาคต
+      const cutoffD = isFutureMonth ? 0 : (isThisMonth ? todayD : daysInMonth);
+      const absentCutoffD = isFutureMonth ? 0 : (isThisMonth ? todayD - 1 : daysInMonth);
 
       const thMonthName = new Date(yr, mo - 1, 1).toLocaleDateString('th-TH', { month: 'long' });
       const thYear = yr + 543;
@@ -15673,7 +15965,6 @@ async function handle(req) {
       for (let i = 0; i < firstDay; i++) cells += `<div></div>`;
 
       // Day cells
-      const cutoffD = isThisMonth ? todayD : daysInMonth;
       for (let d = 1; d <= daysInMonth; d++) {
         const dow = (firstDay + d - 1) % 7;
         const isToday = d === todayD;
@@ -15703,7 +15994,7 @@ async function handle(req) {
           }
         }
 
-        // Accumulate summary + details (only up to today)
+        // Accumulate summary + details
         if (d <= cutoffD) {
           if (rec) {
             sumWork++;
@@ -15727,7 +16018,8 @@ async function handle(req) {
             sumLeave++;
             detLeave.push({ dk, type: lv.type || '-', reason: lv.reason || '', deduct: lv.totalDeduct || 0 });
           }
-          else if (isWorkday) {
+          else if (isWorkday && d <= absentCutoffD) {
+            // ★ ขาด: เฉพาะวันที่ผ่านมาแล้ว (ไม่รวมวันนี้และอนาคต)
             sumAbsent++;
             detAbsent.push({ dk });
           }
@@ -15738,8 +16030,8 @@ async function handle(req) {
         if (rec) cellType = 'work';
         if (lv && !rec) cellType = 'leave';
         if (isHoliday && !rec && !lv) cellType = 'weekend';
-        // ★ ขาดงาน — วันทำงานที่ผ่านมาแล้ว ไม่มี rec และไม่มี leave
-        if (isWorkday && !rec && !lv && d <= cutoffD) cellType = 'absent';
+        // ★ ขาดงาน — วันทำงานที่ผ่านมาแล้ว ไม่มี rec และไม่มี leave (ไม่รวมวันนี้และอนาคต)
+        if (isWorkday && !rec && !lv && d <= absentCutoffD) cellType = 'absent';
         if (isToday && rec) cellType = 'today';
 
         // Colors
@@ -15771,8 +16063,8 @@ async function handle(req) {
 
         // OT badge
         const hasOT = rec && (rec.otPay || 0) > 0;
-        // Deduct badge
-        const deductPts = (isLate ? 2 : 0) + (isEarly ? 2 : 0);
+        // Deduct badge — ใช้ค่าจาก leaveTypeMap ที่แอดมินตั้ง
+        const deductPts = (isLate ? calLateDeductPer : 0) + (isEarly ? calEarlyDeductPer : 0);
         // Late dot
         const lateColor = isLate ? '#f97316' : (isEarly ? '#dc2626' : '');
 
@@ -15784,8 +16076,9 @@ async function handle(req) {
           otPay: rec?.otPay || 0, gpsOk: rec?.gpsOk || false,
           wage: rec?.wage || 0, total: rec?.total || 0,
           leaveType: lv?.type || '', leaveReason: lv?.reason || '',
-          leaveDeduct: lv?.totalDeduct || 0,
+          leaveDeduct: lv ? (() => { const t = lv.type || lv.leaveType || ''; const days = Number(lv.days) || 1; if (t && calLeaveTypeMap[t] !== undefined) return calLeaveTypeMap[t] * days; const dpd = Number(lv.deductPerDay) || 0; if (dpd > 0) return dpd * days; return Number(lv.totalDeduct) || 0; })() : 0,
           isLate, isEarly, shiftIn: locWT?.workStart || shiftIn, shiftOut: locWT?.workEnd || shiftOut,
+          lateDeductPts: calLateDeductPer, earlyDeductPts: calEarlyDeductPer,
           holidayName: specialHolMap[dk] || '',
           locationName: locLabel,
           checkOutLocationName: rec?.checkOutLocationName || '',
@@ -16026,7 +16319,7 @@ async function handle(req) {
       if (d.type === 'empty') { headerBg = '#94a3b8'; title = 'ไม่มีข้อมูล'; }
       if (d.type === 'today') { headerBg = '#16a34a'; title = 'มาทำงาน'; }
 
-      const deductPts = (d.isLate ? 2 : 0) + (d.isEarly ? 2 : 0) + (d.leaveDeduct || 0);
+      const deductPts = (d.isLate ? (d.lateDeductPts || 0) : 0) + (d.isEarly ? (d.earlyDeductPts || 0) : 0) + (d.leaveDeduct || 0);
 
       // ── ประเภทการเข้างาน (method) icon + label ──
       const _methodMap = {
@@ -18618,43 +18911,150 @@ async function handle(req) {
       const shiftIn = dept?.workStart || '08:00';
       const shiftOut = dept?.workEnd || '17:00';
 
-      // Load leave requests (approved/pending)
+      // โหลด leave types เพื่อเอาค่า deduct per day (กรณีใบลาเก่าที่ไม่มี totalDeduct)
+      const leaveTypesRaw = await fbGet('/settings/leaveTypes').catch(() => null);
+      const leaveTypeMap = {};
+      if (leaveTypesRaw && typeof leaveTypesRaw === 'object') {
+        Object.values(leaveTypesRaw).forEach(t => {
+          if (t && t.name) leaveTypeMap[t.name] = Number(t.deduct) || 0;
+        });
+      }
+
+      // Load leave requests (approved/pending) — ทั้งปี, ทุกประเภท
       const thisYear = todayStr.slice(0, 4);
       const leavesRaw = await fbGet(`/leaveRequests/${e._key}`).catch(() => null);
       const allLeaveReqs = leavesRaw && typeof leavesRaw === 'object'
         ? Object.values(leavesRaw).filter(r => r && r.status !== 'rejected') : [];
       const yearLeaveReqs = allLeaveReqs.filter(r => String(r.startDate || '').startsWith(thisYear));
-      let leaveDeduct = yearLeaveReqs.reduce((s, r) => s + (Number(r.totalDeduct) || 0), 0);
+
+      // คำนวณ deduct ต่อใบลา
+      // ลำดับความสำคัญ: 1) ค่าปัจจุบันจาก admin settings  2) deductPerDay ที่บันทึกไว้  3) totalDeduct ที่บันทึกไว้
+      yearLeaveReqs.forEach(r => {
+        const days = Number(r.days) || 1;
+        const typeName = r.type || r.leaveType || '';
+        // ใช้ค่าจาก settings ปัจจุบันเสมอ (ถ้ามีประเภทนี้ใน settings)
+        if (typeName && leaveTypeMap[typeName] !== undefined) {
+          r._computedDeduct = leaveTypeMap[typeName] * days;
+          return;
+        }
+        // fallback: ใช้ deductPerDay หรือ totalDeduct ที่บันทึกไว้
+        const dpdRaw = Number(r.deductPerDay) || 0;
+        if (dpdRaw > 0) { r._computedDeduct = dpdRaw * days; return; }
+        const td = Number(r.totalDeduct) || 0;
+        r._computedDeduct = td;
+      });
+
+      // ★ Dedupe: ถ้ามีใบลาซ้อนวันเดียวกัน ให้ใช้ใบเดิมในระบบก่อน (ไม่ใช่ "นำเข้าจาก Excel")
+      //   ถ้าเป็น import ทั้งคู่ ให้เลือกใบที่ deduct/วัน มากกว่า
+      const perDayRate = (lv) => {
+        const days = Number(lv.days) || 1;
+        return (Number(lv._computedDeduct) || 0) / days;
+      };
+      const dayLeaveMap = {}; // dk → winning leave
+      yearLeaveReqs.forEach(r => {
+        const sd = r.startDate, ed = r.endDate || sd;
+        if (!sd) return;
+        const s = new Date(sd), en = new Date(ed);
+        for (let d = new Date(s); d <= en; d.setDate(d.getDate() + 1)) {
+          const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const cur = dayLeaveMap[dk];
+          if (!cur) { dayLeaveMap[dk] = r; continue; }
+          const curIsImport = (cur.reason === 'นำเข้าจาก Excel');
+          const rIsImport = (r.reason === 'นำเข้าจาก Excel');
+          if (curIsImport && !rIsImport) dayLeaveMap[dk] = r;
+          else if (curIsImport === rIsImport && perDayRate(r) > perDayRate(cur)) dayLeaveMap[dk] = r;
+        }
+      });
+      // คำนวณ leaveDeduct จากใบที่ชนะ dedupe (นับตามวัน)
+      let leaveDeduct = 0;
+      Object.values(dayLeaveMap).forEach(lv => { leaveDeduct += perDayRate(lv); });
+      leaveDeduct = Math.round(leaveDeduct);
+      // แทนที่ yearLeaveReqs ด้วยใบที่ชนะ (unique) สำหรับแสดงใน popup
+      const uniqueWinners = [...new Set(Object.values(dayLeaveMap))];
+      yearLeaveReqs.length = 0;
+      uniqueWinners.forEach(lv => yearLeaveReqs.push(lv));
 
       // Load attendance for the year to detect late/early
       const months = [];
       for (let m = 1; m <= 12; m++) months.push(`${thisYear}-${String(m).padStart(2, '0')}`);
       await Promise.all(months.map(mo => loadAttendanceMonth(mo).catch(() => { })));
 
+      // Load holiday settings (weekly + special)
+      const holRaw = await fbGet('/settings/holidays').catch(() => null);
+      const weeklyHolSet = new Set((holRaw?.weekly || []).map(Number));
+      const specialHolMap = {};
+      Object.values(holRaw?.special || {}).forEach(h => { if (h?.date) specialHolMap[h.date] = h.name || 'วันหยุดพิเศษ'; });
+
       const timeToMin = t => { if (!t) return null; const [h, m] = (t + ':00').split(':').map(Number); return h * 60 + m; };
-      const siMin = timeToMin(shiftIn), soMin = timeToMin(shiftOut);
+      const siMinGlobal = timeToMin(shiftIn), soMinGlobal = timeToMin(shiftOut);
+
+      // อ่านค่าหักคะแนนมาสาย/ออกก่อนเวลาจากที่แอดมินตั้งไว้ (ไม่ hardcode)
+      const lateDeductPerTime = Number(leaveTypeMap['มาสาย']) || 0;
+      const earlyDeductPerTime = Number(leaveTypeMap['ออกก่อนเวลา']) || 0;
 
       let lateCount = 0, earlyCount = 0;
       let lateDeduct = 0, earlyDeduct = 0;
       const lateDetails = [], earlyDetails = [];
 
+      // Build set of dates where employee has attendance record (ทั้งปี)
+      const attendedSet = new Set();
       Object.entries(db.attendance).forEach(([dk, bucket]) => {
         if (!dk.startsWith(thisYear)) return;
         const r = Object.values(bucket || {}).find(x => x.empId === e._key);
         if (!r) return;
+        attendedSet.add(dk);
+        // ใช้เวลาทำงานตาม location → fallback แผนก → global
+        const wt = getWorkTimes(e, r.locationId);
+        const siMin = timeToMin(wt.workStart) ?? siMinGlobal;
+        const soMin = timeToMin(wt.workEnd) ?? soMinGlobal;
         const ciMin = timeToMin(r.checkInTime);
         const coMin = timeToMin(r.checkOutTime);
         if (ciMin !== null && siMin !== null && ciMin > siMin) {
-          lateCount++; lateDeduct += 2;
-          lateDetails.push({ dk, time: r.checkInTime });
+          lateCount++; lateDeduct += lateDeductPerTime;
+          lateDetails.push({ dk, time: r.checkInTime, workStart: wt.workStart, mins: ciMin - siMin });
         }
         if (coMin !== null && soMin !== null && coMin < soMin) {
-          earlyCount++; earlyDeduct += 2;
-          earlyDetails.push({ dk, time: r.checkOutTime });
+          earlyCount++; earlyDeduct += earlyDeductPerTime;
+          earlyDetails.push({ dk, time: r.checkOutTime, workEnd: wt.workEnd, mins: soMin - coMin });
         }
       });
 
-      const totalDeduct = leaveDeduct + lateDeduct + earlyDeduct;
+      // Build leave-date-map (วันที่ครอบคลุมใบลาใดๆ = ไม่นับขาด)
+      const leaveCoverSet = new Set();
+      yearLeaveReqs.forEach(lv => {
+        const sd = lv.startDate, ed = lv.endDate || lv.startDate;
+        if (!sd) return;
+        const s = new Date(sd), en = new Date(ed);
+        for (let d = new Date(s); d <= en; d.setDate(d.getDate() + 1)) {
+          const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          leaveCoverSet.add(dk);
+        }
+      });
+
+      // หา deduct ต่อวันของ "ขาดงาน" จาก leaveTypes
+      const absentDeductPerDay = Number(leaveTypeMap['ขาดงาน']) || 0;
+
+      // คำนวณวันขาดงาน: วันทำงานที่ผ่านมาแล้ว ไม่มี attendance และไม่มีใบลา
+      const absentDetails = [];
+      let absentDeduct = 0;
+      const empStartDate = e.startDate || e.hireDate || null;
+      const yearStart = new Date(`${thisYear}-01-01`);
+      const today = new Date(todayStr);
+      const loopStart = (empStartDate && new Date(empStartDate) > yearStart) ? new Date(empStartDate) : yearStart;
+      for (let d = new Date(loopStart); d < today; d.setDate(d.getDate() + 1)) {
+        const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!dk.startsWith(thisYear)) continue;
+        const dow = d.getDay();
+        if (weeklyHolSet.has(dow)) continue;
+        if (specialHolMap[dk]) continue;
+        if (attendedSet.has(dk)) continue;
+        if (leaveCoverSet.has(dk)) continue;
+        absentDetails.push({ dk });
+        absentDeduct += absentDeductPerDay;
+      }
+      const absentCount = absentDetails.length;
+
+      const totalDeduct = leaveDeduct + lateDeduct + earlyDeduct + absentDeduct;
       const conductScore = Math.max(0, 100 - totalDeduct);
       const { grade: cGrade, desc: cDesc } = getBehaviorGrade(conductScore);
       const { bg: cBg, shadow: cShadow } = getBehaviorGradeColor(cGrade);
@@ -18664,9 +19064,23 @@ async function handle(req) {
       const leaveAbsCount = yearLeaveReqs.filter(r => BAD_TYPES.includes(r.type)).length;
 
       const deductRows = [];
-      if (leaveDeduct > 0) deductRows.push({ label: 'จากการลา/ขาด/โทษ', val: leaveDeduct, icon: 'fa-umbrella-beach', col: '#f59e0b' });
-      if (lateDeduct > 0) deductRows.push({ label: `มาสาย ${lateCount} ครั้ง (ครั้งละ 2 คะแนน)`, val: lateDeduct, icon: 'fa-clock', col: '#f97316' });
-      if (earlyDeduct > 0) deductRows.push({ label: `ออกก่อนเวลา ${earlyCount} ครั้ง (ครั้งละ 2 คะแนน)`, val: earlyDeduct, icon: 'fa-sign-out-alt', col: '#dc2626' });
+      if (leaveDeduct > 0) deductRows.push({ key: 'leave', label: 'จากการลา/โทษ', val: leaveDeduct, icon: 'fa-umbrella-beach', col: '#f59e0b' });
+      if (absentDeduct > 0) deductRows.push({ key: 'absent', label: `ขาดงาน ${absentCount} วัน (ครั้งละ ${absentDeductPerDay} คะแนน)`, val: absentDeduct, icon: 'fa-times-circle', col: '#dc2626' });
+      if (lateDeduct > 0) deductRows.push({ key: 'late', label: `มาสาย ${lateCount} ครั้ง (ครั้งละ ${lateDeductPerTime} คะแนน)`, val: lateDeduct, icon: 'fa-clock', col: '#f97316' });
+      if (earlyDeduct > 0) deductRows.push({ key: 'early', label: `ออกก่อนเวลา ${earlyCount} ครั้ง (ครั้งละ ${earlyDeductPerTime} คะแนน)`, val: earlyDeduct, icon: 'fa-sign-out-alt', col: '#dc2626' });
+
+      // เก็บ detail ไว้ให้ popup เรียกใช้
+      window._empScoreDetail = {
+        empName: e.name,
+        year: thisYear,
+        late: lateDetails,
+        early: earlyDetails,
+        leave: yearLeaveReqs,
+        absent: absentDetails,
+        leaveDeduct, lateDeduct, earlyDeduct, absentDeduct, totalDeduct,
+        absentDeductPerDay, lateDeductPerTime, earlyDeductPerTime,
+        lateCount, earlyCount, leaveDays, absentCount,
+      };
 
       el.innerHTML = `
   <!-- Main score card -->
@@ -18685,37 +19099,41 @@ async function handle(req) {
       <div style="font-size:11px;color:rgba(255,255,255,.6);">หักคะแนนรวม ${totalDeduct} คะแนน</div>
     </div>
 
-    <!-- Stat row -->
+    <!-- Stat row (คลิกได้) -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
-      <div style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div onclick="showEmpScoreDetail('leave')" style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);cursor:pointer;transition:transform .12s;" onmousedown="this.style.transform='scale(.96)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.96)'" ontouchend="this.style.transform=''">
         <div style="font-size:24px;font-weight:800;color:#f59e0b;">${leaveDays}</div>
-        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">วันลา</div>
+        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">วันลา <i class="fas fa-chevron-right" style="font-size:8px;margin-left:2px;color:#cbd5e1;"></i></div>
       </div>
-      <div style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div onclick="showEmpScoreDetail('late')" style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);cursor:pointer;transition:transform .12s;" onmousedown="this.style.transform='scale(.96)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.96)'" ontouchend="this.style.transform=''">
         <div style="font-size:24px;font-weight:800;color:#f97316;">${lateCount}</div>
-        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">มาสาย</div>
+        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">มาสาย <i class="fas fa-chevron-right" style="font-size:8px;margin-left:2px;color:#cbd5e1;"></i></div>
       </div>
-      <div style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+      <div onclick="showEmpScoreDetail('early')" style="background:#fff;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);cursor:pointer;transition:transform .12s;" onmousedown="this.style.transform='scale(.96)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.96)'" ontouchend="this.style.transform=''">
         <div style="font-size:24px;font-weight:800;color:#dc2626;">${earlyCount}</div>
-        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">ออกก่อนเวลา</div>
+        <div style="font-size:10px;color:#64748b;margin-top:3px;font-weight:600;">ออกก่อนเวลา <i class="fas fa-chevron-right" style="font-size:8px;margin-left:2px;color:#cbd5e1;"></i></div>
       </div>
     </div>
 
-    <!-- Deduction breakdown -->
+    <!-- Deduction breakdown (คลิกได้แต่ละแถว) -->
     ${deductRows.length ? `
     <div style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.07);margin-bottom:16px;">
-      <div style="padding:12px 18px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#1e293b;">
-        <i class="fas fa-minus-circle" style="color:#dc2626;margin-right:6px;"></i>รายละเอียดการหักคะแนน
+      <div onclick="showEmpScoreDetail('all')" style="padding:12px 18px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#1e293b;cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+        <span><i class="fas fa-minus-circle" style="color:#dc2626;margin-right:6px;"></i>รายละเอียดการหักคะแนน</span>
+        <i class="fas fa-chevron-right" style="color:#cbd5e1;font-size:11px;"></i>
       </div>
       ${deductRows.map(r => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #f8fafc;">
+      <div onclick="showEmpScoreDetail('${r.key}')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #f8fafc;cursor:pointer;transition:background .12s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
             <i class="fas ${r.icon}" style="color:${r.col};font-size:13px;"></i>
           </div>
           <span style="font-size:12px;color:#374151;font-weight:500;">${r.label}</span>
         </div>
-        <span style="font-size:14px;font-weight:800;color:#dc2626;">-${r.val}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:800;color:#dc2626;">-${r.val}</span>
+          <i class="fas fa-chevron-right" style="color:#cbd5e1;font-size:10px;"></i>
+        </div>
       </div>`).join('')}
     </div>`: ''}
 
@@ -18734,6 +19152,166 @@ async function handle(req) {
     </button>
   </div>`;
     }
+
+    // =====================================================================
+    //  POPUP: รายละเอียดการหักคะแนน (หน้าพนักงาน)
+    // =====================================================================
+    window.showEmpScoreDetail = function (type) {
+      const det = window._empScoreDetail;
+      if (!det) return;
+      const empName = det.empName || '';
+      const year = det.year || '';
+      const fmtDate = (dk) => {
+        if (!dk) return '-';
+        try {
+          const d = new Date(dk);
+          return d.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+        } catch (_) { return dk; }
+      };
+
+      const titles = {
+        leave: { t: 'วันลา / โทษ', icon: 'fa-umbrella-beach', col: '#f59e0b', bg: '#fffbeb' },
+        absent: { t: 'ขาดงาน', icon: 'fa-times-circle', col: '#dc2626', bg: '#fef2f2' },
+        late: { t: 'มาสาย', icon: 'fa-clock', col: '#f97316', bg: '#fff7ed' },
+        early: { t: 'ออกก่อนเวลา', icon: 'fa-sign-out-alt', col: '#dc2626', bg: '#fef2f2' },
+        all: { t: 'รายละเอียดการหักคะแนน', icon: 'fa-minus-circle', col: '#dc2626', bg: '#fef2f2' },
+      };
+      const h = titles[type] || titles.all;
+
+      let rowsHtml = '';
+      let subtitle = '';
+
+      if (type === 'leave') {
+        const items = det.leave || [];
+        subtitle = `รวม ${items.length} ใบ · หัก ${det.leaveDeduct} คะแนน`;
+        if (!items.length) {
+          rowsHtml = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i><div style="font-size:13px;">ไม่มีข้อมูลการลาในปีนี้</div></div>`;
+        } else {
+          // เรียงตามวันที่เริ่มลา ล่าสุดก่อน
+          const sorted = [...items].sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+          rowsHtml = sorted.map((r, i) => {
+            const days = Number(r.days) || 1;
+            const ded = Number(r._computedDeduct || 0);
+            const dateRange = r.startDate === r.endDate || !r.endDate
+              ? fmtDate(r.startDate)
+              : fmtDate(r.startDate) + ' - ' + fmtDate(r.endDate);
+            const statusBadge = r.status === 'approved'
+              ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">อนุมัติ</span>'
+              : '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">รออนุมัติ</span>';
+            return `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 12px;color:#94a3b8;font-size:11px;vertical-align:top;">${i + 1}</td>
+              <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:12px;vertical-align:top;">${dateRange}<div style="font-size:10px;color:#94a3b8;font-weight:500;margin-top:2px;">${days} วัน · ${statusBadge}</div></td>
+              <td style="padding:10px 12px;font-size:12px;vertical-align:top;"><span style="background:#fce7f3;color:#9d174d;padding:2px 10px;border-radius:12px;font-weight:700;">${r.type || '-'}</span>${r.reason ? `<div style="font-size:10px;color:#64748b;margin-top:4px;max-width:160px;word-wrap:break-word;">${r.reason}</div>` : ''}</td>
+              <td style="padding:10px 12px;font-size:12px;color:#dc2626;font-weight:800;text-align:right;vertical-align:top;">${ded > 0 ? '-' + ded : '0'}</td>
+            </tr>`;
+          }).join('');
+          rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่ / สถานะ</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ประเภท / เหตุผล</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">หัก</th></tr></thead><tbody>${rowsHtml}</tbody><tfoot><tr style="background:#fffbeb;"><td colspan="3" style="padding:10px 12px;font-weight:800;color:#b45309;">รวมทั้งสิ้น</td><td style="padding:10px 12px;font-weight:800;color:#dc2626;text-align:right;">-${det.leaveDeduct}</td></tr></tfoot></table>`;
+        }
+      } else if (type === 'absent') {
+        const items = det.absent || [];
+        const perDay = Number(det.absentDeductPerDay || 0);
+        subtitle = `รวม ${items.length} วัน · หัก ${det.absentDeduct} คะแนน (วันละ ${perDay})`;
+        if (!items.length) {
+          rowsHtml = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;"><i class="fas fa-check-circle" style="font-size:28px;margin-bottom:10px;display:block;color:#16a34a;"></i><div style="font-size:13px;">ไม่มีประวัติขาดงาน</div></div>`;
+        } else {
+          const sorted = [...items].sort((a, b) => String(b.dk || '').localeCompare(String(a.dk || '')));
+          rowsHtml = sorted.map((r, i) => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+              <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+              <td style="padding:10px 12px;font-size:12px;"><span style="background:#fecaca;color:#991b1b;padding:2px 10px;border-radius:12px;font-weight:700;">ไม่มาทำงาน</span></td>
+              <td style="padding:10px 12px;font-size:12px;color:#dc2626;font-weight:800;text-align:right;">-${perDay}</td>
+            </tr>`).join('');
+          rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">สถานะ</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">หัก</th></tr></thead><tbody>${rowsHtml}</tbody><tfoot><tr style="background:#fef2f2;"><td colspan="3" style="padding:10px 12px;font-weight:800;color:#991b1b;">รวม ${items.length} วัน × ${perDay} คะแนน</td><td style="padding:10px 12px;font-weight:800;color:#dc2626;text-align:right;">-${det.absentDeduct}</td></tr></tfoot></table>`;
+        }
+      } else if (type === 'late') {
+        const items = det.late || [];
+        subtitle = `รวม ${items.length} ครั้ง · หัก ${det.lateDeduct} คะแนน`;
+        if (!items.length) {
+          rowsHtml = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i><div style="font-size:13px;">ไม่มีประวัติมาสาย</div></div>`;
+        } else {
+          const sorted = [...items].sort((a, b) => String(b.dk || '').localeCompare(String(a.dk || '')));
+          rowsHtml = sorted.map((r, i) => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+              <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+              <td style="padding:10px 12px;font-size:13px;color:#f97316;font-weight:700;">${r.time || '-'}</td>
+              <td style="padding:10px 12px;font-size:11px;color:#64748b;">กะ ${r.workStart || '-'}</td>
+              <td style="padding:10px 12px;font-size:11px;"><span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:700;">สาย ${r.mins} นาที</span></td>
+              <td style="padding:10px 12px;font-size:12px;color:#dc2626;font-weight:800;text-align:right;">-2</td>
+            </tr>`).join('');
+          rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">เวลาเข้า</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">กำหนด</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">สาย</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">หัก</th></tr></thead><tbody>${rowsHtml}</tbody><tfoot><tr style="background:#fff7ed;"><td colspan="5" style="padding:10px 12px;font-weight:800;color:#c2410c;">รวม ${items.length} ครั้ง × 2 คะแนน</td><td style="padding:10px 12px;font-weight:800;color:#dc2626;text-align:right;">-${det.lateDeduct}</td></tr></tfoot></table>`;
+        }
+      } else if (type === 'early') {
+        const items = det.early || [];
+        subtitle = `รวม ${items.length} ครั้ง · หัก ${det.earlyDeduct} คะแนน`;
+        if (!items.length) {
+          rowsHtml = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;"><i class="fas fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i><div style="font-size:13px;">ไม่มีประวัติออกก่อนเวลา</div></div>`;
+        } else {
+          const sorted = [...items].sort((a, b) => String(b.dk || '').localeCompare(String(a.dk || '')));
+          rowsHtml = sorted.map((r, i) => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 12px;color:#94a3b8;font-size:11px;">${i + 1}</td>
+              <td style="padding:10px 12px;font-weight:700;color:#1e293b;font-size:13px;">${fmtDate(r.dk)}</td>
+              <td style="padding:10px 12px;font-size:13px;color:#7c3aed;font-weight:700;">${r.time || '-'}</td>
+              <td style="padding:10px 12px;font-size:11px;color:#64748b;">กะ ${r.workEnd || '-'}</td>
+              <td style="padding:10px 12px;font-size:11px;"><span style="background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:10px;font-weight:700;">ก่อน ${r.mins} นาที</span></td>
+              <td style="padding:10px 12px;font-size:12px;color:#dc2626;font-weight:800;text-align:right;">-2</td>
+            </tr>`).join('');
+          rowsHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f8fafc;"><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">#</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">วันที่</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">เวลาออก</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">กำหนด</th><th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;">ออกก่อน</th><th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;">หัก</th></tr></thead><tbody>${rowsHtml}</tbody><tfoot><tr style="background:#fef2f2;"><td colspan="5" style="padding:10px 12px;font-weight:800;color:#991b1b;">รวม ${items.length} ครั้ง × 2 คะแนน</td><td style="padding:10px 12px;font-weight:800;color:#dc2626;text-align:right;">-${det.earlyDeduct}</td></tr></tfoot></table>`;
+        }
+      } else {
+        // type === 'all' — สรุปรวมทุกประเภท
+        subtitle = `หักรวม ${det.totalDeduct} คะแนน · คะแนนคงเหลือ ${Math.max(0, 100 - det.totalDeduct)}`;
+        const rows = [
+          { label: 'วันลา / โทษ', count: (det.leave || []).length, unit: 'ใบ', val: det.leaveDeduct, icon: 'fa-umbrella-beach', col: '#f59e0b', bg: '#fffbeb', key: 'leave' },
+          { label: 'ขาดงาน', count: det.absentCount || 0, unit: 'วัน', val: det.absentDeduct || 0, icon: 'fa-times-circle', col: '#dc2626', bg: '#fef2f2', key: 'absent' },
+          { label: 'มาสาย', count: det.lateCount, unit: 'ครั้ง', val: det.lateDeduct, icon: 'fa-clock', col: '#f97316', bg: '#fff7ed', key: 'late' },
+          { label: 'ออกก่อนเวลา', count: det.earlyCount, unit: 'ครั้ง', val: det.earlyDeduct, icon: 'fa-sign-out-alt', col: '#dc2626', bg: '#fef2f2', key: 'early' },
+        ];
+        rowsHtml = rows.map(r => `
+          <div onclick="closeModal();setTimeout(()=>showEmpScoreDetail('${r.key}'),100);" style="display:flex;align-items:center;gap:12px;padding:14px;background:${r.bg};border-radius:12px;margin-bottom:10px;cursor:pointer;border:1px solid ${r.col}22;transition:transform .12s;" onmouseover="this.style.transform='translateX(3px)'" onmouseout="this.style.transform=''">
+            <div style="width:40px;height:40px;border-radius:10px;background:${r.col};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <i class="fas ${r.icon}" style="color:#fff;font-size:15px;"></i>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:700;color:#1e293b;">${r.label}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">${r.count} ${r.unit}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:18px;font-weight:900;color:#dc2626;">-${r.val}</div>
+              <div style="font-size:10px;color:#94a3b8;">คะแนน</div>
+            </div>
+            <i class="fas fa-chevron-right" style="color:#cbd5e1;font-size:12px;"></i>
+          </div>`).join('');
+        rowsHtml = `<div style="padding:4px 0;">${rowsHtml}
+          <div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,#fef2f2,#fee2e2);border-radius:12px;border:2px solid #fecaca;text-align:center;">
+            <div style="font-size:11px;color:#991b1b;font-weight:600;letter-spacing:.04em;text-transform:uppercase;">หักคะแนนรวมปี ${year}</div>
+            <div style="font-size:32px;font-weight:900;color:#dc2626;margin-top:4px;">-${det.totalDeduct}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">คะแนนคงเหลือ <b style="color:#1e293b;">${Math.max(0, 100 - det.totalDeduct)}</b> / 100</div>
+          </div>
+        </div>`;
+      }
+
+      const body = `
+    <div style="background:${h.bg};border-left:4px solid ${h.col};border-radius:12px;padding:12px 14px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:${h.col};display:flex;align-items:center;justify-content:center;">
+          <i class="fas ${h.icon}" style="color:#fff;font-size:16px;"></i>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.4px;">${empName} · ปี ${year}</div>
+          <div style="font-size:16px;font-weight:800;color:${h.col};">${h.t}</div>
+          ${subtitle ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">${subtitle}</div>` : ''}
+        </div>
+      </div>
+    </div>
+    <div style="${type === 'all' ? '' : 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;'}max-height:440px;overflow-y:auto;">
+      ${rowsHtml}
+    </div>`;
+      openModal(h.t + ' — ' + empName, body, '<button onclick="closeModal()" class="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">ปิด</button>');
+    };
 
     // =====================================================================
     //  LEAVE SETTINGS PAGE (Admin)
